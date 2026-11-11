@@ -1,4 +1,4 @@
-// Read-only legacy notes for the owner. They are not pm_events, not claims,
+﻿// Read-only legacy notes for the owner. They are not pm_events, not claims,
 // and cannot be promise-retracted by QQ message id.
 import fs from 'node:fs'
 

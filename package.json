@@ -1,21 +1,12 @@
 {
   "name": "atori-memory-emotion",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": false,
   "type": "module",
   "description": "A small, retractable event-memory core and a minimal, non-scripted emotion-state layer for long-lived companion characters.",
   "license": "MIT",
-  "author": "Atori Project",
-  "keywords": [
-    "memory",
-    "event-memory",
-    "emotion",
-    "companion",
-    "sqlite",
-    "nodejs"
-  ],
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.13"
   },
   "exports": {
     "./memory": "./portable-memory-core/core.mjs",
@@ -26,8 +17,7 @@
     "./emotion/shadow": "./emotion/emotion-state-shadow.mjs"
   },
   "scripts": {
-    "test": "node scripts/test.mjs",
-    "examples": "node examples/memory-quickstart.mjs && node examples/emotion-quickstart.mjs"
+    "test": "node scripts/test.mjs"
   },
   "files": [
     "emotion/",

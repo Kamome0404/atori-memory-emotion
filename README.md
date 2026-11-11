@@ -7,22 +7,13 @@ Two small, dependency-free Node.js modules for a long-lived companion character:
 
 This is not a chatbot, a model, a UI, or a hosted service. It does not call a network API. You bring your own model, transport, consent flow, and storage policy.
 
-**Status: experimental.**
-
-**Localized example data.** The library itself is language-neutral, but the
-bundled examples and the default mood/label strings are Chinese (the project
-originated as a Chinese-speaking companion character). Replace them with your
-own strings; nothing in the core assumes Chinese. The tests are the contract. Read the limits before using it with real people.
+**Status: experimental.** The tests are the contract. Read the limits before using it with real people.
 
 ---
 
 ## Requirements
 
 - Node.js **22.13+** with `node:sqlite`
-  - Node.js **22.13–23.3**: `node:sqlite` is still behind a flag — run with
-    `node --experimental-sqlite ...` (the test script prints this hint and exits
-    with code 2 when the module is unavailable)
-  - Node.js **23.4+ / 24.x**: no flag needed (the module is still marked experimental upstream)
 - No npm dependencies
 - Windows tested; other platforms not yet verified
 
@@ -163,7 +154,7 @@ Both examples use a temporary directory and dummy identities.
 npm test
 ```
 
-Current package: **15 test files**, including:
+Current package: **16 test files**, including:
 
 ```
 memory isolation, recall, retraction, tombstones, gap resume
@@ -172,6 +163,8 @@ episode reference windows
 emotion transitions, hold/soft inertia
 uncertainty, residue, attention
 salience-gated attention
+episode state (open / resolved / reopened)
+active-episode reuse
 ```
 
 The tests use temporary databases and dummy users only.

@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict'
+﻿import assert from 'node:assert/strict'
 import {normalizePortableUsers} from './onebot.mjs'
 
 assert.deepEqual(normalizePortableUsers('111111111,222222222',{owners:['999999999'],ownerShadow:true}),['111111111','222222222','999999999'])

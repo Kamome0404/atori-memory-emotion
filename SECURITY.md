@@ -34,18 +34,3 @@ This package is a library, not a hosted service. The host application must:
 ## Reporting
 
 Open an issue with reproduction steps using dummy data. Do not include real private conversations, credentials, database files, or backups.
-
-## Reporting a vulnerability
-
-Please **do not** open a public issue for security problems.
-
-- Preferred: open a private security advisory on the repository
-  (GitHub → Security → Advisories → "Report a vulnerability").
-- Include: affected version, a minimal reproduction, and what you expected.
-- We aim to acknowledge within 7 days. This is a small project; there is no
-  bounty programme and no guaranteed SLA.
-
-## Supported versions
-
-Only the latest released minor version receives fixes. `0.x` releases may
-change APIs between minors; read `CHANGELOG.md` before upgrading.

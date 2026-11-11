@@ -19,6 +19,12 @@ export function createEmotionStateShadow({
   const state = createEmotionState({ filePath: stateFilePath, ownerUid })
   const stamps = []
   let pendingAttention = false
+  const attentionEpisodes = new Map()
+  const INTENSITY_RANK = { soft: 1, normal: 2, strong: 3 }
+  const episodeKey = a => {
+    const label = String(a.episode || '').trim()
+    return label ? `ep:${label}` : `${a.impact}:${a.focus || 'unknown'}`
+  }
 
   // Relevance gate, not a fixed cadence: only a salient event (or a real
   // stance change with medium salience) leaves one attention note pending.
@@ -58,13 +64,18 @@ export function createEmotionStateShadow({
     stamps.push(...recent)
     if (stamps.length >= maxPerHour) return Object.freeze({ applied: false, reason: 'rate_limited' })
     stamps.push(now)
+    const activeEpisodes = [...attentionEpisodes.entries()]
+      .filter(([key]) => key.startsWith('ep:'))
+      .map(([key, value]) => ({ label: key.slice(3), closed: value?.closed === true }))
+      .slice(-12)
     let appraisal
     try {
-      appraisal = await classifier.classify({ userText, replyText })
+      appraisal = await classifier.classify({ userText, replyText, activeEpisodes })
     } catch (e) {
       log(`[情绪影子] 分类失败：${String(e?.message || e).slice(0, 80)}`)
       return Object.freeze({ applied: false, reason: 'classify_failed' })
     }
+    try { log(`[情绪影子] 分类 impact=${appraisal.impact} focus=${appraisal.focus} intensity=${appraisal.intensity} salience=${appraisal.salience} episode=${appraisal.episode || '-'} state=${appraisal.episodeState || '-'} uncertain=${appraisal.uncertain} active=${activeEpisodes.map(x => x.label + (x.closed ? '(closed)' : '')).join('|') || '-'}`) } catch {}
     const result = state.observe({
       eventId,
       confirmed: true,
@@ -79,11 +90,49 @@ export function createEmotionStateShadow({
       log(`[情绪影子] 未记录：${result.reason}`)
       return Object.freeze({ applied: false, reason: result.reason })
     }
+    try { log(`[情绪影子] 状态 stance=${result.state.stance} changed=${result.changed}`) } catch {}
     const salience = appraisal.salience || 'low'
-    pendingAttention = salience === 'high' || (salience === 'medium' && result.changed)
+    // Soft play/soothe/neutral are usually just conversational texture. Do not
+    // turn them into an attention reminder just because the stance changed.
+    const softTexture = appraisal.intensity === 'soft'
+      && ['play', 'soothe', 'neutral'].includes(appraisal.impact)
+    const attentionWanted = salience === 'high'
+      || (salience === 'medium' && result.changed && !softTexture)
+    try { log(`[情绪影子] 门 wanted=${attentionWanted} softTexture=${softTexture} salience=${salience} changed=${result.changed}`) } catch {}
+    // An episode is a thing that happened, not a mood label. Its state is
+    // resolved by the classifier, not by Atori's soothing/repair tone.
+    const key = episodeKey(appraisal)
+    const episodeState = appraisal.episodeState || (appraisal.impact === 'repair' ? 'resolved' : 'open')
+    if (episodeState === 'resolved') {
+      const previous = attentionEpisodes.get(key)
+      if (previous) {
+        attentionEpisodes.set(key, { ...previous, closed: true })
+        try { log(`[情绪影子] resolved 关闭 episode=${key}`) } catch {}
+      } else {
+        try { log(`[情绪影子] resolved 未匹配 episode=${key}`) } catch {}
+      }
+    }
+    const previous = attentionEpisodes.get(key)
+    const rank = INTENSITY_RANK[appraisal.intensity] || 0
+    const escalated = !!previous && (
+      rank > previous.rank
+      || (['hurt', 'boundary'].includes(appraisal.impact)
+          && !['hurt', 'boundary'].includes(previous.impact))
+    )
+    const reopened = previous?.closed === true || episodeState === 'reopened'
+    const canPublish = episodeState !== 'resolved' && episodeState !== 'uncertain'
+    if (attentionWanted && canPublish && (!previous || reopened || escalated)) {
+      pendingAttention = true
+      attentionEpisodes.set(key, { rank, impact: appraisal.impact, closed: false })
+      const why = !previous ? '新事件' : reopened ? '已修复重开' : '升级'
+      try { log(`[情绪影子] 发布注意力 episode=${key} reason=${why} rank=${rank}`) } catch {}
+      if (attentionEpisodes.size > 32) attentionEpisodes.delete(attentionEpisodes.keys().next().value)
+    } else {
+      try { log(`[情绪影子] 不发布 episode=${key} wanted=${attentionWanted} state=${episodeState} impact=${appraisal.impact} previous=${!!previous} closed=${previous?.closed === true} escalated=${escalated}`) } catch {}
+    }
     return Object.freeze({
       applied: true,
-      classification: { impact: appraisal.impact, focus: appraisal.focus, salience: appraisal.salience, intensity: appraisal.intensity, uncertain: appraisal.uncertain },
+      classification: { impact: appraisal.impact, focus: appraisal.focus, salience: appraisal.salience, intensity: appraisal.intensity, uncertain: appraisal.uncertain, episode: appraisal.episode || '' },
       state: { stance: result.state.stance, mood: result.state.mood, labels: result.state.labels, residue: result.state.residue },
     })
   }

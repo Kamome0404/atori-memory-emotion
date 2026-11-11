@@ -42,6 +42,7 @@ attentionBlock()
 nextAttentionBlock()
 ```
 
+`episodeState` decides whether an episode is open, resolved, reopened, or uncertain.
 `nextAttentionBlock` uses relevance gating:
 
 ```
