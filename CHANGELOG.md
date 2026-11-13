@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 - 2026-11-13
+
+- Add persistent derived episode history with own/source event digests.
+- Revoking a source event, own event, or reply deletes the entire derived record.
+- Reject preference-tainted user text, source text, and replies.
+- Reject rebinding the same derived id to a different source snapshot.
+- Keep current preference claims separate from historical/derived continuity.
+- 87 tests pass.
+
 ## 0.5.0 - 2026-11-13
 
 - Add frozen provenance snapshots and send-time structural revalidation for preference references.

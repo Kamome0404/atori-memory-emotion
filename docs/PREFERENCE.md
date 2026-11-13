@@ -81,3 +81,15 @@ A new transport session or `resumeAfterGap` clears current preference claims and
 Object-level fences record the revoked claim's object and created watermark before an event/reply is deleted, so an older opposite claim cannot become current.
 
 This is deliberately conservative: without a verified replay/recall source, the package cannot know that an offline recall happened.
+
+
+## Derived episode history
+
+Ordinary (non-preference) episode-derived history can be persisted in the same memory database:
+
+```
+pm_derived_v1          own confirmed event, generation, schema, policy, own digest
+pm_derived_sources_v1  source event IDs + frozen SHA-256 digests
+```
+
+`registerDerived` validates authorization, gap, every source event and reply, and rejects preference-tainted sources. `loadDerived` re-hashes the own event and every source; any missing/changed source drops the derived record. Revoking a source event, the own event, or a reply deletes the whole derived record. Preference-derived history is never registered.

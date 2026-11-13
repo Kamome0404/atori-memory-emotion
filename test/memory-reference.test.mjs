@@ -68,3 +68,11 @@ test('malformed or missing provenance fails closed', () => {
     used: true, turn: { take: () => ({ text: 'ref', provenance: snapshot('e1') }) }, reference: 'ref',
   }), false)
 })
+
+
+test('normal episode reference is not rejected by the preference provenance field', () => {
+  const episode = { schema: 1, kind: 'episode', tenant: '10001', scope: 'private:10001', generation: 1, ownEventId: 'e1', sources: [] }
+  assert.equal(referenceStillCurrent({
+    used: true, turn: { take: () => ({ text: 'ep', provenance: episode }) }, reference: 'ep',
+  }), true)
+})

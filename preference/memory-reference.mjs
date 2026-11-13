@@ -33,7 +33,7 @@ export function referenceStillCurrent({ used, answer, turn, reference, provenanc
     const r = turn.take()
     if (!r) return false
     if (r.preference === true && provenance == null) return false
-    if (r.provenance != null && provenance == null) return false
+    if (r.provenance?.kind === 'preference' && provenance == null) return false
     return !!reference && r.text === reference
   } catch {
     return false
