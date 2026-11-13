@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1 - 2026-11-13
+
+- Normalize UID at the adapter boundary; numeric and string UIDs now revalidate identically.
+- Add runtime factories for proactive reminders and consolidation loading/scheduling.
+- Explicit agreed reminders are not blocked by self-initiated quota/cooldown; quiet hours still apply.
+- Keep core SQL, provenance and revocation semantics unchanged.
+- 109 tests pass.
+
 ## 0.7.0 - 2026-11-13
 
 - Add excerpt-backed memory consolidation with source event digests.

@@ -18,12 +18,12 @@ test('adapter consolidates recent events by uid and generation', () => {
     }
     turn('e1', '今天在楼下看到一只猫')
     turn('e2', '它趴在电动车上')
-    const status = adapter.status('10001')
+    const status = adapter.status(10001)
     assert.ok(status.allowed)
     assert.ok(Number.isSafeInteger(status.generation))
-    const made = adapter.consolidateRecent({ uid: '10001', generation: status.generation, limit: 2 })
+    const made = adapter.consolidateRecent({ uid: 10001, generation: status.generation, limit: 2 })
     assert.equal(made.length, 1)
-    const rows = adapter.loadConsolidated({ uid: '10001', generation: status.generation, limit: 4 })
+    const rows = adapter.loadConsolidated({ uid: 10001, generation: status.generation, limit: 4 })
     assert.equal(rows.length, 1)
   } finally {
     try { adapter.close() } catch {}
