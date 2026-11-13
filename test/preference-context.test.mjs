@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { findPreferenceMention, findPreferenceMentions, formatPreferenceBlock, formatPreferenceReference } from '../portable-memory-core/preference-context.mjs'
+import { findPreferenceMention, findPreferenceMentions, isPreferenceQuery, formatPreferenceBlock, formatPreferenceReference } from '../portable-memory-core/preference-context.mjs'
 
 test('exact object mention is eligible', () => {
   assert.deepEqual(findPreferenceMention('我想喝咖啡还是茶'), { activity: '喝', object: '咖啡' })
@@ -65,4 +65,13 @@ test('actual preference reference is short and does not invent history', () => {
   assert.ok(neg.includes('不喜欢'))
   assert.ok(!neg.includes('以前说过喜欢'))
   assert.ok(nil.includes('无法确认'))
+})
+
+
+test('broad preference queries are detected even without an exact object', () => {
+  assert.equal(isPreferenceQuery('我喜欢喝什么？'), true)
+  assert.equal(isPreferenceQuery('你还记得咖啡吗'), true)
+  assert.equal(isPreferenceQuery('你还记得咖啡'), true)
+  assert.equal(isPreferenceQuery('咖啡因是什么？'), false)
+  assert.equal(isPreferenceQuery('今天好累'), false)
 })

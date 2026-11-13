@@ -57,7 +57,9 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
       CREATE TABLE IF NOT EXISTS pm_sessions (tenant TEXT NOT NULL, scope TEXT NOT NULL, active INTEGER NOT NULL CHECK(active IN (0,1)), PRIMARY KEY(tenant,scope));
       CREATE TABLE IF NOT EXISTS pm_fences (tenant TEXT NOT NULL, scope TEXT NOT NULL, gap INTEGER NOT NULL CHECK(gap IN (0,1)), PRIMARY KEY(tenant,scope));
       CREATE TABLE IF NOT EXISTS pm_tombstones (tenant TEXT NOT NULL, scope TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('event','reply')), id TEXT NOT NULL, PRIMARY KEY(tenant,scope,kind,id));
-      CREATE TABLE IF NOT EXISTS pm_gap_resolutions (tenant TEXT NOT NULL, scope TEXT NOT NULL, generation INTEGER NOT NULL, resolved_at INTEGER NOT NULL, reason TEXT NOT NULL, evidence TEXT NOT NULL, PRIMARY KEY(tenant,scope,generation));`)
+      CREATE TABLE IF NOT EXISTS pm_gap_resolutions (tenant TEXT NOT NULL, scope TEXT NOT NULL, generation INTEGER NOT NULL, resolved_at INTEGER NOT NULL, reason TEXT NOT NULL, evidence TEXT NOT NULL, PRIMARY KEY(tenant,scope,generation));
+      CREATE TABLE IF NOT EXISTS pm_preference_fences (tenant TEXT NOT NULL, scope TEXT NOT NULL, activity TEXT NOT NULL, object TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(tenant,scope,activity,object));
+      CREATE TABLE IF NOT EXISTS pm_preference_history (tenant TEXT NOT NULL, scope TEXT NOT NULL, event_id TEXT NOT NULL, version INTEGER NOT NULL, created INTEGER NOT NULL, polarity TEXT NOT NULL, activity TEXT NOT NULL, object TEXT NOT NULL, PRIMARY KEY(tenant,scope,event_id,version));`)
     if(fresh)db.prepare('INSERT INTO pm_metadata VALUES (?,?)').run('marker','portable-memory-v1')
   } catch (e) { db.close(); throw e }
   const transaction = (fn) => {
@@ -82,6 +84,10 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
   const tombstone = (kind, id) => db.prepare('INSERT OR IGNORE INTO pm_tombstones VALUES(?,?,?,?)').run(t,s,kind,id)
   const tombstoned = (kind, id) => !!db.prepare('SELECT 1 FROM pm_tombstones WHERE tenant=? AND scope=? AND kind=? AND id=?').get(t,s,kind,id)
   const removeEvent = (id) => {
+    for (const c of db.prepare('SELECT activity,object,created FROM pm_claims_v1 WHERE tenant=? AND scope=? AND event_id=?').all(t,s,id)) {
+      db.prepare('INSERT INTO pm_preference_fences VALUES(?,?,?,?,?) ON CONFLICT(tenant,scope,activity,object) DO UPDATE SET created=MAX(created,excluded.created)').run(t,s,c.activity,c.object,c.created)
+    }
+    db.prepare('DELETE FROM pm_preference_history WHERE tenant=? AND scope=? AND event_id=?').run(t,s,id)
     for (const r of db.prepare('SELECT id FROM pm_replies WHERE tenant=? AND scope=? AND event_id=?').all(t,s,id)) tombstone('reply',r.id)
     tombstone('event',id)
     db.prepare('DELETE FROM pm_events WHERE tenant=? AND scope=? AND id=?').run(t,s,id)
@@ -128,19 +134,33 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
       if (typeof object !== 'string' || !/^[\u4e00-\u9fff]{1,16}$/.test(object)) throw new TypeError('invalid object')
       return historyRead(() => {
         requireAuthorization(generation)
-        const maxRow = db.prepare("SELECT MAX(created) AS created FROM pm_claims_v1 WHERE tenant=? AND scope=? AND kind='self_reported_preference' AND activity=? AND object=?").get(t, s, activity, object)
+        const fence = db.prepare('SELECT created FROM pm_preference_fences WHERE tenant=? AND scope=? AND activity=? AND object=?').get(t, s, activity, object)
+        const after = fence?.created ?? -1
+        const maxRow = db.prepare("SELECT MAX(created) AS created FROM pm_claims_v1 WHERE tenant=? AND scope=? AND kind='self_reported_preference' AND activity=? AND object=? AND created>?").get(t, s, activity, object, after)
         if (!maxRow || maxRow.created == null) return null
-        const polarities = db.prepare("SELECT DISTINCT polarity FROM pm_claims_v1 WHERE tenant=? AND scope=? AND kind='self_reported_preference' AND activity=? AND object=? AND created=?").all(t, s, activity, object, maxRow.created)
+        const polarities = db.prepare("SELECT DISTINCT polarity FROM pm_claims_v1 WHERE tenant=? AND scope=? AND kind='self_reported_preference' AND activity=? AND object=? AND created=? AND created>?").all(t, s, activity, object, maxRow.created, after)
         if (polarities.length !== 1) return null
-        const top = db.prepare("SELECT event_id AS eventId, version, created, polarity, activity, object FROM pm_claims_v1 WHERE tenant=? AND scope=? AND kind='self_reported_preference' AND activity=? AND object=? AND created=? ORDER BY event_id ASC LIMIT 1").get(t, s, activity, object, maxRow.created)
+        const top = db.prepare("SELECT event_id AS eventId, version, created, polarity, activity, object FROM pm_claims_v1 WHERE tenant=? AND scope=? AND kind='self_reported_preference' AND activity=? AND object=? AND created=? AND created>? ORDER BY event_id ASC LIMIT 1").get(t, s, activity, object, maxRow.created, after)
         if (!top) return null
         return Object.freeze({ ...top })
       })
     },
-    beginSession() { return transaction(()=>{const old=db.prepare('SELECT active FROM pm_sessions WHERE tenant=? AND scope=?').get(t,s);if(old?.active===1)db.prepare('INSERT INTO pm_fences VALUES(?,?,1) ON CONFLICT(tenant,scope) DO UPDATE SET gap=1').run(t,s);db.prepare('INSERT INTO pm_sessions VALUES(?,?,1) ON CONFLICT(tenant,scope) DO UPDATE SET active=1').run(t,s);return old?.active!==1}) },
+    readPreferenceHistory({ generation, activity, object } = {}) {
+      generationNumber(generation)
+      if (!['喝', '吃', '听', '看'].includes(activity)) throw new TypeError('invalid activity')
+      if (typeof object !== 'string' || !/^[\u4e00-\u9fff]{1,16}$/.test(object)) throw new TypeError('invalid object')
+      return historyRead(() => {
+        requireAuthorization(generation)
+        const fence = db.prepare('SELECT created FROM pm_preference_fences WHERE tenant=? AND scope=? AND activity=? AND object=?').get(t, s, activity, object)
+        const after = fence?.created ?? -1
+        const row = db.prepare("SELECT event_id AS eventId, version, created, polarity, activity, object FROM pm_preference_history WHERE tenant=? AND scope=? AND activity=? AND object=? AND created>? ORDER BY created DESC, event_id ASC LIMIT 1").get(t, s, activity, object, after)
+        return row ? Object.freeze({ ...row, historical: true }) : null
+      })
+    },
+    beginSession() { return transaction(()=>{const old=db.prepare('SELECT active FROM pm_sessions WHERE tenant=? AND scope=?').get(t,s);if(old?.active===1)db.prepare('INSERT INTO pm_fences VALUES(?,?,1) ON CONFLICT(tenant,scope) DO UPDATE SET gap=1').run(t,s);db.prepare('INSERT OR IGNORE INTO pm_preference_history SELECT tenant,scope,event_id,version,created,polarity,activity,object FROM pm_claims_v1 WHERE tenant=? AND scope=?').run(t,s);db.prepare('DELETE FROM pm_claims_v1 WHERE tenant=? AND scope=?').run(t,s);db.prepare('DELETE FROM pm_preference_fences WHERE tenant=? AND scope=?').run(t,s);db.prepare('INSERT INTO pm_sessions VALUES(?,?,1) ON CONFLICT(tenant,scope) DO UPDATE SET active=1').run(t,s);return old?.active!==1}) },
     endSession() { return transaction(()=>{db.prepare('UPDATE pm_sessions SET active=0 WHERE tenant=? AND scope=?').run(t,s);return true}) },
     markGap() { return transaction(()=>{db.prepare('INSERT INTO pm_fences VALUES(?,?,1) ON CONFLICT(tenant,scope) DO UPDATE SET gap=1').run(t,s);return true}) },
-    resetAfterGap() { return transaction(()=>{const current=auth();const fence=db.prepare('SELECT gap FROM pm_fences WHERE tenant=? AND scope=?').get(t,s);if(!current||fence?.gap!==1)throw Error('no gap to reset');if(current.generation>=Number.MAX_SAFE_INTEGER)throw Error('generation exhausted');for(const e of db.prepare('SELECT id FROM pm_events WHERE tenant=? AND scope=?').all(t,s))removeEvent(e.id);db.prepare('UPDATE pm_authorization SET generation=?,allowed=1 WHERE tenant=? AND scope=?').run(current.generation+1,t,s);db.prepare('UPDATE pm_fences SET gap=0 WHERE tenant=? AND scope=?').run(t,s);return current.generation+1}) },
+    resetAfterGap() { return transaction(()=>{const current=auth();const fence=db.prepare('SELECT gap FROM pm_fences WHERE tenant=? AND scope=?').get(t,s);if(!current||fence?.gap!==1)throw Error('no gap to reset');if(current.generation>=Number.MAX_SAFE_INTEGER)throw Error('generation exhausted');for(const e of db.prepare('SELECT id FROM pm_events WHERE tenant=? AND scope=?').all(t,s))removeEvent(e.id);db.prepare('DELETE FROM pm_preference_fences WHERE tenant=? AND scope=?').run(t,s);db.prepare('DELETE FROM pm_preference_history WHERE tenant=? AND scope=?').run(t,s);db.prepare('UPDATE pm_authorization SET generation=?,allowed=1 WHERE tenant=? AND scope=?').run(current.generation+1,t,s);db.prepare('UPDATE pm_fences SET gap=0 WHERE tenant=? AND scope=?').run(t,s);return current.generation+1}) },
     // Resume after a gap without deleting events. The missing interval is recorded;
     // this is not a claim that no recall notice was missed.
     resumeAfterGap({reason='',evidence='',now=Date.now()}={}) {
@@ -154,6 +174,9 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
         const next=current.generation+1
         db.prepare('INSERT OR REPLACE INTO pm_gap_resolutions VALUES(?,?,?,?,?,?)').run(t,s,next,now,reason.trim(),evidence)
         db.prepare('UPDATE pm_authorization SET generation=?,allowed=1 WHERE tenant=? AND scope=?').run(next,t,s)
+        db.prepare('INSERT OR IGNORE INTO pm_preference_history SELECT tenant,scope,event_id,version,created,polarity,activity,object FROM pm_claims_v1 WHERE tenant=? AND scope=?').run(t,s)
+        db.prepare('DELETE FROM pm_claims_v1 WHERE tenant=? AND scope=?').run(t,s)
+        db.prepare('DELETE FROM pm_preference_fences WHERE tenant=? AND scope=?').run(t,s)
         db.prepare('UPDATE pm_fences SET gap=0 WHERE tenant=? AND scope=?').run(t,s)
         return {generation:next,events:db.prepare('SELECT count(*) AS n FROM pm_events WHERE tenant=? AND scope=?').get(t,s).n,reason:reason.trim()}
       })
@@ -167,7 +190,7 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
         if (current && current.generation >= Number.MAX_SAFE_INTEGER) throw new Error('generation exhausted')
         const next = (current?.generation ?? 0) + 1
         db.prepare('INSERT INTO pm_authorization VALUES(?,?,?,?) ON CONFLICT(tenant,scope) DO UPDATE SET generation=excluded.generation,allowed=excluded.allowed').run(t,s,next,allowed ? 1 : 0)
-        if (!allowed) for (const e of db.prepare('SELECT id FROM pm_events WHERE tenant=? AND scope=?').all(t,s)) removeEvent(e.id)
+        if (!allowed) { for (const e of db.prepare('SELECT id FROM pm_events WHERE tenant=? AND scope=?').all(t,s)) removeEvent(e.id); db.prepare('DELETE FROM pm_claims_v1 WHERE tenant=? AND scope=?').run(t,s); db.prepare('DELETE FROM pm_preference_fences WHERE tenant=? AND scope=?').run(t,s); db.prepare('DELETE FROM pm_preference_history WHERE tenant=? AND scope=?').run(t,s) }
         return next
       })
     },
@@ -191,7 +214,7 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
         db.prepare('INSERT INTO pm_events VALUES(?,?,?,?,?,?)').run(t,s,eventId,created,text,replies.length)
         const insert = db.prepare('INSERT INTO pm_replies VALUES(?,?,?,?,?,?)')
         replies.forEach((r,i) => insert.run(t,s,r.id,eventId,i,r.text))
-        if(preference)db.prepare('INSERT INTO pm_claims_v1 VALUES(?,?,?,?,?,?,?,?,?)').run(t,s,eventId,claimVersion,created,preference.kind,preference.polarity,preference.activity,preference.object)
+        if(preference){db.prepare('INSERT INTO pm_claims_v1 VALUES(?,?,?,?,?,?,?,?,?)').run(t,s,eventId,claimVersion,created,preference.kind,preference.polarity,preference.activity,preference.object);db.prepare('INSERT OR IGNORE INTO pm_preference_history VALUES(?,?,?,?,?,?,?,?)').run(t,s,eventId,claimVersion,created,preference.polarity,preference.activity,preference.object)}
         return true
       })
     },

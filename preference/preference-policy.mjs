@@ -55,17 +55,68 @@ function hasStalePositive(segment, object) {
 }
 
 
-export function createPreferenceTurn({ mention, mentions, claim } = {}) {
+function hasStaleNegative(segment, object) {
+  const neg = /(?:不喜欢|不爱|不偏好|不常喝|不总喝|不再喜欢|不再喝)/
+  let from = 0
+  while (from <= segment.length) {
+    const at = segment.indexOf(object, from)
+    if (at < 0) break
+    from = at + 1
+    const beforeObject = segment[at - 1] || ''
+    const afterObject = segment[at + object.length] || ''
+    if (!PREFIX_OK.test(beforeObject) || !FOLLOW.test(afterObject)) continue
+    const before = segment.slice(Math.max(0, at - 16), at)
+    if (neg.test(before.slice(-12))) return true
+    const tail = segment.slice(at + object.length, at + object.length + 16)
+    if (neg.test(tail)) return true
+  }
+  return false
+}
+
+
+function hasBroadObjectMention(text, object) {
+  let from = 0
+  while (from <= text.length) {
+    const at = text.indexOf(object, from)
+    if (at < 0) return false
+    from = at + 1
+    const before = text[at - 1] || ''
+    const after = text[at + object.length] || ''
+    if (PREFIX_OK.test(before) && FOLLOW.test(after)) return true
+  }
+  return false
+}
+
+export function createPreferenceTurn({ mention, mentions, claim, broad = false, historical = null } = {}) {
   const list = (Array.isArray(mentions) ? mentions : (mention ? [mention] : []))
     .filter(m => m && typeof m.object === 'string' && m.object)
   if (!list.length) return null
   const objects = list.map(m => escapeRe(m.object))
+  const isBroad = broad === true
+  const polarityByObject = new Map()
+  for (const m of list) {
+    if (m.claim && m.claim.polarity) polarityByObject.set(m.object, m.claim.polarity)
+  }
+  const primaryObject = list[0]?.object
+  if (claim && claim.polarity && primaryObject && !polarityByObject.has(primaryObject)) {
+    polarityByObject.set(primaryObject, claim.polarity)
+  }
 
   const sanitizeText = (text) => {
     const raw = String(text || '')
     if (!raw.trim()) return ''
     const parts = raw.split(SPLIT)
-    const kept = parts.filter(part => !objects.some(object => hasStalePositive(part, object)))
+    const kept = parts.filter(part => {
+      if (isBroad && PREFERENCE_TERMS.some(t => hasBroadObjectMention(part, t.object))) return false
+      for (let i = 0; i < objects.length; i++) {
+        const rawObject = list[i].object
+        const polarity = polarityByObject.get(rawObject) || null
+        const object = objects[i]
+        if (polarity !== 'positive' && hasStalePositive(part, object)) return false
+        if (polarity !== 'negative' && hasStaleNegative(part, object)) return false
+      }
+      return true
+    })
     return kept.join('')
       .split('\n')
       .map(line => line.replace(/^[，,；;。！!？?\s]+/, '').replace(/\s+$/, ''))
@@ -94,9 +145,19 @@ export function createPreferenceTurn({ mention, mentions, claim } = {}) {
     mention: Object.freeze({ ...list[0] }),
     mentions: Object.freeze(list.map(m => Object.freeze({ ...m }))),
     claim: claim ? Object.freeze({ ...claim }) : null,
+    historical: historical ? Object.freeze({ ...historical }) : null,
+    broad: broad === true,
     active: true,
     sanitizeText,
     sanitizeBlock,
     filterMessages,
   })
+}
+
+
+export function formatHistoricalPreference(pref) {
+  if (!pref || !pref.polarity) return ''
+  const what = `${pref.activity || ''}${pref.object || ''}`
+  if (!what) return ''
+  return `他以前说过${pref.polarity === 'negative' ? '不喜欢' : '喜欢'}${what}；现在不确定，可以自然问一句“现在还喜欢吗”，别当成现在的事实。`
 }

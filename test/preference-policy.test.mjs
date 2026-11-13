@@ -90,3 +90,29 @@ test('object and predicate are paired per occurrence', () => {
 test('no mention means no turn', () => {
   assert.equal(createPreferenceTurn(), null)
 })
+
+
+test('A5: current positive removes old negative, current negative removes old positive', () => {
+  const pos = createPreferenceTurn({ mentions: [{ activity: '喝', object: '咖啡', claim: { polarity: 'positive' } }] })
+  assert.doesNotMatch(pos.sanitizeText('我不喜欢喝咖啡。'), /不喜欢喝咖啡/)
+  const neg = createPreferenceTurn({ mentions: [{ activity: '喝', object: '咖啡', claim: { polarity: 'negative' } }] })
+  assert.doesNotMatch(neg.sanitizeText('我喜欢喝咖啡。'), /喜欢喝咖啡/)
+  assert.match(neg.sanitizeText('咖啡店今天关门了。'), /咖啡店/)
+})
+
+
+test('broad preference turn removes unrelated old object dialogue', () => {
+  const t = createPreferenceTurn({ mentions: [{ activity: '喝', object: '咖啡', claim: null }], broad: true })
+  const out = t.sanitizeText('我想喝咖啡还是茶。今天下雨了。')
+  assert.doesNotMatch(out, /咖啡|茶/)
+  assert.match(out, /今天下雨/)
+})
+
+
+test('broad turn preserves compound facts but removes old object dialogue', () => {
+  const t = createPreferenceTurn({ mentions: [{ activity: '喝', object: '咖啡', claim: null }], broad: true })
+  const out = t.sanitizeText('咖啡因影响睡眠。咖啡店在楼下。我想喝咖啡还是茶。')
+  assert.match(out, /咖啡因影响睡眠/)
+  assert.match(out, /咖啡店在楼下/)
+  assert.doesNotMatch(out, /我想喝咖啡还是茶/)
+})

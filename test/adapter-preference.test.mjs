@@ -64,3 +64,44 @@ test('adapter exposes the read-only preference lookup after a confirmed turn', (
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+
+test('cached preference source never silently switches to a same-polarity event', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'adapter-cache-'))
+  const adapter = createMemoryAdapter({ dbPath: join(dir, 'memory.sqlite'), users: ['10001'], enabled: true })
+  try {
+    assert.equal(adapter.consent({ uid: '10001', action: 'grant', authenticated: true, disclosed: true }), 1)
+    const first = adapter.begin({
+      uid: '10001', scopeKind: 'direct', eventId: 'a1', created: 1000,
+      text: '我喜欢喝咖啡', query: '我喜欢喝咖啡', authenticated: true,
+    })
+    first.attempt('嗯'); first.confirm('嗯', { status: 'ok', retcode: 0, id: 11 }); assert.equal(first.finish(true), true)
+    const query = adapter.begin({
+      uid: '10001', scopeKind: 'direct', eventId: 'q1', created: 1100,
+      text: '我想喝咖啡还是茶', query: '我想喝咖啡还是茶', authenticated: true,
+    })
+    const ref = query.reference
+    assert.equal(ref.provenance.kind, 'preference')
+    assert.equal(Object.isFrozen(ref.provenance), true)
+    assert.equal(Object.isFrozen(ref.provenance.mentions[0]), true)
+
+    const second = adapter.begin({
+      uid: '10001', scopeKind: 'direct', eventId: 'a2', created: 1200,
+      text: '我喜欢喝咖啡', query: '我喜欢喝咖啡', authenticated: true,
+    })
+    second.attempt('嗯'); second.confirm('嗯', { status: 'ok', retcode: 0, id: 12 }); assert.equal(second.finish(true), true)
+    assert.equal(query.reference, null)
+    query.finish(false)
+
+    const fresh = adapter.begin({
+      uid: '10001', scopeKind: 'direct', eventId: 'q2', created: 1300,
+      text: '我想喝咖啡还是茶', query: '我想喝咖啡还是茶', authenticated: true,
+    })
+    const freshRef = fresh.reference
+    assert.equal(freshRef.provenance.mentions[0].claim.eventId, 'a2')
+    fresh.finish(false)
+  } finally {
+    try { adapter.close() } catch {}
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

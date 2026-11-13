@@ -60,3 +60,24 @@ It does not modify the current user message or original stored evidence.
 - No group profile, personality inference, decay, or automatic merge.
 - Host-specific prompt assembly and conversation history are not included.
 - No guarantee that an untracked free-text summary is fully clean; callers should conservatively remove blocks they cannot trace.
+
+
+## Provenance and restart policy
+
+Preference references carry a frozen provenance snapshot:
+
+```
+schema / kind / tenant / scope / generation
+mentions[] with activity, object, claim|null
+claim = eventId, version, created, polarity, activity, object
+```
+
+The adapter locks the first selected source for a turn. A changed source returns `null`; it never silently switches to another same-polarity event. Send-time validation re-reads every mention at the original generation and compares the full tuple.
+
+## Restart and revocation
+
+A new transport session or `resumeAfterGap` clears current preference claims and object fences, keeps events, and requires a fresh online declaration. Historical claims are archived separately and can be mentioned only as "以前说过", never as current fact.
+
+Object-level fences record the revoked claim's object and created watermark before an event/reply is deleted, so an older opposite claim cannot become current.
+
+This is deliberately conservative: without a verified replay/recall source, the package cannot know that an offline recall happened.

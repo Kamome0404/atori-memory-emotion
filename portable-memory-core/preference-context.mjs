@@ -45,6 +45,17 @@ export function findPreferenceMention(text) {
 }
 
 
+export function isPreferenceQuery(text) {
+  if (typeof text !== 'string' || !text.trim() || text.length > 300) return false
+  const t = text.trim()
+  // Recall questions may omit 吗/？ entirely.
+  if (/(?:记得|还记得)/.test(t) && PREFERENCE_TERMS.some(x => t.includes(x.object))) return true
+  if (!/[？?]|吗|呢|什么|哪个|还是|要不要/.test(t)) return false
+  if (/(?:喜欢|爱|偏好|常喝|总喝)/.test(t)) return true
+  if (/(?:喝什么|吃什么|听什么|看什么)/.test(t)) return true
+  return false
+}
+
 export function formatPreferenceBlock(pref) {
   if (!pref || !['positive', 'negative'].includes(pref.polarity)) return ''
   const what = `${pref.activity || ''}${pref.object || ''}`

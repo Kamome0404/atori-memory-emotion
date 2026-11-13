@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 - 2026-11-13
+
+- Add frozen provenance snapshots and send-time structural revalidation for preference references.
+- Add object-level preference fences; revoking a correction cannot revive an older opposite claim.
+- Clear current preference claims on new transport session / `resumeAfterGap`; keep events.
+- Archive historical claims separately for "以前说过" soft context; never treat them as current.
+- Add broad preference-query gating and dual-polarity Stage I filtering.
+- Add provenance/history/revocation tests; 79 tests pass.
+
 ## 0.4.0 - 2026-11-13
 
 - Add one audited preference registry shared by claim extraction and context lookup.

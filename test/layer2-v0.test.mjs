@@ -121,3 +121,64 @@ test('8 未授权/过期 generation 拒绝读取', () => {
   assert.throws(() => c.readPreference({ generation: generation + 1, activity: '喝', object: '咖啡' }), /authorization/)
   close(c)
 })
+
+
+test('10 A2: revoking the latest negative does not revive the old positive', () => {
+  const { c, generation } = boot()
+  add(c, generation, 'a2p', '我喜欢喝咖啡', 1000)
+  add(c, generation, 'a2n', '我不喜欢喝咖啡', 2000)
+  c.revokeEvent('a2n')
+  assert.equal(c.readPreference({ generation, activity: '喝', object: '咖啡' }), null)
+  add(c, generation, 'a2p2', '我喜欢喝咖啡', 3000)
+  assert.equal(c.readPreference({ generation, activity: '喝', object: '咖啡' }).polarity, 'positive')
+  close(c)
+})
+
+
+test('11 A4: a new transport session requires a fresh declaration', () => {
+  const { c, generation, dir } = boot()
+  add(c, generation, 'a4p', '我喜欢喝咖啡', 1000)
+  close(c)
+  const c2 = make('10001', dir)
+  c2.beginSession()
+  assert.equal(c2.readPreference({ generation, activity: '喝', object: '咖啡' }), null)
+  const past = c2.readPreferenceHistory({ generation, activity: '喝', object: '咖啡' })
+  assert.equal(past.polarity, 'positive')
+  assert.equal(past.historical, true)
+  c2.revokeEvent('a4p')
+  assert.equal(c2.readPreferenceHistory({ generation, activity: '喝', object: '咖啡' }), null)
+  const g2 = c2.authorization().generation
+  add(c2, g2, 'a4p2', '我喜欢喝咖啡', 2000)
+  assert.equal(c2.readPreference({ generation: g2, activity: '喝', object: '咖啡' }).polarity, 'positive')
+  close(c2)
+})
+
+test('12 A4: resumeAfterGap clears old preference claims but keeps events', () => {
+  const { c, generation } = boot()
+  add(c, generation, 'a4gap', '我喜欢喝咖啡', 1000)
+  c.markGap()
+  const before = c.authorization()
+  const resumed = c.resumeAfterGap({ reason: 'test gap', evidence: 'offline window' })
+  assert.ok(resumed.generation > before.generation)
+  assert.equal(c.readPreference({ generation: resumed.generation, activity: '喝', object: '咖啡' }), null)
+  assert.ok(resumed.events >= 1)
+  close(c)
+})
+
+
+test('13 history is cleared by reply revoke', () => {
+  const { c, generation } = boot()
+  add(c, generation, 'hrep', '我喜欢喝咖啡', 1000)
+  c.revokeReply('r-hrep')
+  assert.equal(c.readPreferenceHistory({ generation, activity: '喝', object: '咖啡' }), null)
+  close(c)
+})
+
+test('14 withdraw and regrant cannot resurrect history', () => {
+  const { c, generation } = boot()
+  add(c, generation, 'hwd', '我喜欢喝咖啡', 1000)
+  c.setAuthorization(false)
+  const next = c.setAuthorization(true)
+  assert.equal(c.readPreferenceHistory({ generation: next, activity: '喝', object: '咖啡' }), null)
+  close(c)
+})
