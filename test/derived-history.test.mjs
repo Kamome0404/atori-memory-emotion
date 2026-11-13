@@ -41,8 +41,8 @@ test('revoking a source deletes the derived record, even if another event has th
   assert.equal(c.registerDerived({ generation, ownEventId: 'own', sourceEventIds: ['srcA'] }), true)
   c.revokeEvent('srcA')
   assert.equal(c.loadDerived({ generation }).length, 0)
-  assert.equal(c.registerDerived({ generation, ownEventId: 'own', sourceEventIds: ['srcB'] }), true)
-  assert.equal(c.loadDerived({ generation }).length, 1)
+  assert.equal(c.registerDerived({ generation, ownEventId: 'own', sourceEventIds: ['srcB'] }), false)
+  assert.equal(c.loadDerived({ generation }).length, 0)
   close(c)
 })
 

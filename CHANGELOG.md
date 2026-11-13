@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 - 2026-11-13
+
+- Add episode provenance with own event and source digests; send-time structural validation.
+- Add episode source revalidation and preference/episode kind dispatch.
+- Add derived tombstones so a deleted derived reply cannot be rebound to another source.
+- Disable ordinary history fallback when derived history was injected without a current episode.
+- Harden preference taint checks for replies and mixed clauses.
+- 88 tests pass.
+
 ## 0.6.0 - 2026-11-13
 
 - Add persistent derived episode history with own/source event digests.

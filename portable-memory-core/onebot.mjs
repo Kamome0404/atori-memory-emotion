@@ -27,6 +27,7 @@ export function createOneBotMemory({dbPath,selfId,users,enabled=false,clock=()=>
   readPreference(args){return service.readPreference(args)},
   readPreferenceHistory(args){return service.readPreferenceHistory(args)},
   revalidatePreference(args){return service.revalidatePreference(args)},
+  revalidateEpisode(args){return service.revalidateEpisode(args)},
   loadDerived(args){return service.loadDerived(args)},
   registerDerived(args){return service.registerDerived(args)},
   notice(e){if(e?.post_type!=='notice'||e.notice_type!=='friend_recall'||e.group_id!=null||String(e.self_id)!==selfId||!validMid(e.message_id))return false;let uid,kind;if(member(String(e.user_id))){uid=String(e.user_id);kind='event'}else if(String(e.user_id)===selfId&&member(String(e.target_id))){uid=String(e.target_id);kind='reply'}else return false;return service.notice({uid,kind,messageId:String(e.message_id),authenticated:true})},

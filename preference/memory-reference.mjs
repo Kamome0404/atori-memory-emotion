@@ -23,12 +23,25 @@ export function preferenceProvenanceEqual(a, b) {
   })
 }
 
-export function referenceStillCurrent({ used, answer, turn, reference, provenance, currentProvenance, historyRev, currentRev } = {}) {
+
+function sameEpisodeSource(a, b) {
+  return !!a && !!b && a.eventId === b.eventId && a.created === b.created && a.digest === b.digest
+}
+export function episodeProvenanceEqual(a, b) {
+  if (!a || !b || a.schema !== 1 || b.schema !== 1 || a.kind !== 'episode' || b.kind !== 'episode') return false
+  if (a.tenant !== b.tenant || a.scope !== b.scope || a.generation !== b.generation || a.ownEventId !== b.ownEventId) return false
+  if (!Array.isArray(a.sources) || !Array.isArray(b.sources) || a.sources.length !== b.sources.length) return false
+  return a.sources.every((x, i) => sameEpisodeSource(x, b.sources[i]))
+}
+
+export function referenceStillCurrent({ used, answer, turn, reference, provenance, currentProvenance, episodeProvenance, currentEpisodeProvenance, historyRev, currentRev } = {}) {
   if (!used && !answer) return true
   if (!turn) return false
   if (historyRev != null && historyRev !== currentRev) return false
   if (provenance != null &&
       (!currentProvenance || !preferenceProvenanceEqual(provenance, currentProvenance))) return false
+  if (episodeProvenance != null &&
+      (!currentEpisodeProvenance || !episodeProvenanceEqual(episodeProvenance, currentEpisodeProvenance))) return false
   try {
     const r = turn.take()
     if (!r) return false

@@ -76,3 +76,11 @@ test('normal episode reference is not rejected by the preference provenance fiel
     used: true, turn: { take: () => ({ text: 'ep', provenance: episode }) }, reference: 'ep',
   }), true)
 })
+
+
+test('episode provenance compares source digests, not text', () => {
+  const base = { schema: 1, kind: 'episode', tenant: '10001', scope: 'private:10001', generation: 1, ownEventId: 'own', sources: [{ eventId: 'a', created: 1000, digest: 'd1' }] }
+  const changed = { ...base, sources: [{ eventId: 'b', created: 1000, digest: 'd1' }] }
+  assert.equal(referenceStillCurrent({ used: true, turn: { take: () => ({ text: 'x', provenance: base }) }, reference: 'x', episodeProvenance: base, currentEpisodeProvenance: base }), true)
+  assert.equal(referenceStillCurrent({ used: true, turn: { take: () => ({ text: 'x', provenance: changed }) }, reference: 'x', episodeProvenance: base, currentEpisodeProvenance: changed }), false)
+})
