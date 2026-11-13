@@ -1,6 +1,6 @@
 {
   "name": "atori-memory-emotion",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "private": false,
   "type": "module",
   "description": "Dependency-free event memory, a minimal emotion layer, a conservative reader, and an audited preference layer for long-lived companion characters.",

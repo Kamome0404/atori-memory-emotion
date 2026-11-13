@@ -19,7 +19,7 @@ export function createMemoryAdapter({dbPath,users,enabled=false}={}){
  if(enabled&&fs.existsSync(dbPath)){const stat=fs.lstatSync(dbPath);if(!stat.isFile()||stat.isSymbolicLink())throw Error('invalid memory database');const db=new DatabaseSync(dbPath,{readOnly:true});let rows;try{if(db.prepare("SELECT value FROM pm_metadata WHERE key='marker'").get()?.value!=='portable-memory-v1')throw Error('invalid memory database');rows=db.prepare('SELECT tenant,scope FROM pm_authorization WHERE allowed=1 LIMIT 129').all()}finally{db.close()}if(rows.length>128||rows.some(r=>!id(r.tenant)||r.scope!==`private:${r.tenant}`))throw Error('invalid memory accounts');try{for(const r of rows)if(allUsers||permitted.has(r.tenant))core(r.tenant)}catch(e){for(const c of cores.values())try{c.close()}catch{};throw e}}
  return Object.freeze({
   consent({uid,action,authenticated=false,disclosed=false}={}){const c=core(uid,action==='withdraw');if(!c||authenticated!==true||!['grant','withdraw'].includes(action)||(action==='grant'&&disclosed!==true))return false;try{const result=c.setAuthorization(action==='grant');if(action==='grant')startSession(uid,c);return result}catch(e){gap(uid,c);throw e}},
-  status(uid){const c=core(uid,true);if(!c)return null;const s=c.authorization();return {allowed:s.allowed,gap:s.gap||blocked.has(uid),seen:s.generation>0}},
+  status(uid){const c=core(uid,true);if(!c)return null;const s=c.authorization();return {allowed:s.allowed,gap:s.gap||blocked.has(uid),seen:s.generation>0,generation:s.generation}},
   readPreference({uid,activity,object}={}){
    const c=core(uid);if(!c)return null;const s=c.authorization();if(!s.allowed||s.gap||blocked.has(uid))return null
    try{return c.readPreference({generation:s.generation,activity,object})}catch{return null}
@@ -29,6 +29,9 @@ export function createMemoryAdapter({dbPath,users,enabled=false}={}){
    try{return c.readPreferenceHistory({generation:s.generation,activity,object})}catch{return null}
   },
   loadDerived({uid,generation,limit=8}={}){try{const c=core(uid);if(!c)return [];return c.loadDerived({generation,limit})}catch{return []}},
+  loadConsolidated({uid,generation,limit=4}={}){try{const c=core(uid);if(!c)return [];return c.loadConsolidated({generation,limit})}catch{return []}},
+  consolidateRecent({uid,generation,limit=5}={}){try{const c=core(uid);if(!c)return [];return c.consolidateRecent({generation,limit})}catch{return []}},
+  revalidateConsolidated({uid,generation,id}={}){try{const c=core(uid);if(!c)return null;const rows=c.loadConsolidated({generation,limit:16});return rows.find(r=>r.id===id)||null}catch{return null}},
   registerDerived({uid,generation,derivedId,ownEventId,sourceEventIds,policyVersion=1}={}){try{const c=core(uid);if(!c)return false;return c.registerDerived({generation,derivedId,ownEventId,sourceEventIds,policyVersion})}catch{return false}},
   revalidateEpisode({uid,provenance}={}){try{const c=core(uid);if(!c||!provenance||provenance.kind!=='episode'||!Array.isArray(provenance.sources))return null;const snap=c.episodeProvenance({generation:provenance.generation,eventIds:provenance.sources.map(x=>x.eventId)});return snap?{...snap,ownEventId:provenance.ownEventId}:null}catch{return null}},
   revalidatePreference({uid,provenance}={}){

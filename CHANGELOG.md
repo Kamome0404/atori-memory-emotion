@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 - 2026-11-13
+
+- Add excerpt-backed memory consolidation with source event digests.
+- Store fixed-template summary content; arbitrary free prose is refused.
+- Exclude preference and protected boundary sources from consolidation.
+- Delete summaries when any source event/reply is revoked.
+- Load summaries only in private scope; validate content/source digests at send time.
+- Add adapter/core integration tests; 97 tests pass.
+
 ## 0.6.1 - 2026-11-13
 
 - Add episode provenance with own event and source digests; send-time structural validation.

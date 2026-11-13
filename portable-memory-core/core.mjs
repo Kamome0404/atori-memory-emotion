@@ -63,8 +63,13 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
       CREATE TABLE IF NOT EXISTS pm_preference_history (tenant TEXT NOT NULL, scope TEXT NOT NULL, event_id TEXT NOT NULL, version INTEGER NOT NULL, created INTEGER NOT NULL, polarity TEXT NOT NULL, activity TEXT NOT NULL, object TEXT NOT NULL, PRIMARY KEY(tenant,scope,event_id,version));
       CREATE TABLE IF NOT EXISTS pm_derived_v1 (tenant TEXT NOT NULL, scope TEXT NOT NULL, id TEXT NOT NULL, schema INTEGER NOT NULL, generation INTEGER NOT NULL, policy_version INTEGER NOT NULL, own_event_id TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(tenant,scope,id), FOREIGN KEY(tenant,scope,own_event_id) REFERENCES pm_events(tenant,scope,id) ON DELETE CASCADE);
       CREATE TABLE IF NOT EXISTS pm_derived_sources_v1 (tenant TEXT NOT NULL, scope TEXT NOT NULL, derived_id TEXT NOT NULL, source_event_id TEXT NOT NULL, digest TEXT NOT NULL, PRIMARY KEY(tenant,scope,derived_id,source_event_id), FOREIGN KEY(tenant,scope,derived_id) REFERENCES pm_derived_v1(tenant,scope,id) ON DELETE CASCADE);
-      CREATE TABLE IF NOT EXISTS pm_derived_tombstones (tenant TEXT NOT NULL, scope TEXT NOT NULL, derived_id TEXT NOT NULL, PRIMARY KEY(tenant,scope,derived_id));`)
+      CREATE TABLE IF NOT EXISTS pm_derived_tombstones (tenant TEXT NOT NULL, scope TEXT NOT NULL, derived_id TEXT NOT NULL, PRIMARY KEY(tenant,scope,derived_id));
+      CREATE TABLE IF NOT EXISTS pm_consolidated_v1 (tenant TEXT NOT NULL, scope TEXT NOT NULL, id TEXT NOT NULL, schema INTEGER NOT NULL, kind TEXT NOT NULL, generation INTEGER NOT NULL, policy_version INTEGER NOT NULL, template_version INTEGER NOT NULL, payload_json TEXT NOT NULL, content TEXT NOT NULL, content_digest TEXT NOT NULL, source_set_digest TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(tenant,scope,id));
+      CREATE TABLE IF NOT EXISTS pm_consolidated_sources_v1 (tenant TEXT NOT NULL, scope TEXT NOT NULL, node_id TEXT NOT NULL, source_event_id TEXT NOT NULL, event_digest TEXT NOT NULL, PRIMARY KEY(tenant,scope,node_id,source_event_id), FOREIGN KEY(tenant,scope,node_id) REFERENCES pm_consolidated_v1(tenant,scope,id) ON DELETE CASCADE);
+      CREATE TABLE IF NOT EXISTS pm_consolidated_rank_v1 (tenant TEXT NOT NULL, scope TEXT NOT NULL, node_id TEXT NOT NULL, importance INTEGER NOT NULL DEFAULT 0, review_count INTEGER NOT NULL DEFAULT 0, last_reviewed_at INTEGER, last_retrieved_at INTEGER, PRIMARY KEY(tenant,scope,node_id), FOREIGN KEY(tenant,scope,node_id) REFERENCES pm_consolidated_v1(tenant,scope,id) ON DELETE CASCADE);
+      CREATE TABLE IF NOT EXISTS pm_consolidated_tombstones (tenant TEXT NOT NULL, scope TEXT NOT NULL, node_id TEXT NOT NULL, PRIMARY KEY(tenant,scope,node_id));`)
     try{db.prepare('ALTER TABLE pm_derived_v1 ADD COLUMN own_digest TEXT').run()}catch{}
+    try{db.prepare('ALTER TABLE pm_consolidated_v1 ADD COLUMN content TEXT').run()}catch{}
     if(fresh)db.prepare('INSERT INTO pm_metadata VALUES (?,?)').run('marker','portable-memory-v1')
   } catch (e) { db.close(); throw e }
   const transaction = (fn) => {
@@ -93,6 +98,8 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
       db.prepare('INSERT INTO pm_preference_fences VALUES(?,?,?,?,?) ON CONFLICT(tenant,scope,activity,object) DO UPDATE SET created=MAX(created,excluded.created)').run(t,s,c.activity,c.object,c.created)
     }
     db.prepare('DELETE FROM pm_preference_history WHERE tenant=? AND scope=? AND event_id=?').run(t,s,id)
+    for (const c of db.prepare('SELECT DISTINCT node_id FROM pm_consolidated_sources_v1 WHERE tenant=? AND scope=? AND source_event_id=?').all(t,s,id)) { db.prepare('INSERT OR IGNORE INTO pm_consolidated_tombstones VALUES(?,?,?)').run(t,s,c.node_id); db.prepare('DELETE FROM pm_consolidated_v1 WHERE tenant=? AND scope=? AND id=?').run(t,s,c.node_id) }
+    db.prepare('DELETE FROM pm_consolidated_sources_v1 WHERE tenant=? AND scope=? AND source_event_id=?').run(t,s,id)
     for (const d of db.prepare('SELECT DISTINCT derived_id FROM pm_derived_sources_v1 WHERE tenant=? AND scope=? AND source_event_id=?').all(t,s,id)) { db.prepare('INSERT OR IGNORE INTO pm_derived_tombstones VALUES(?,?,?)').run(t,s,d.derived_id); db.prepare('DELETE FROM pm_derived_v1 WHERE tenant=? AND scope=? AND id=?').run(t,s,d.derived_id) }
     db.prepare('DELETE FROM pm_derived_sources_v1 WHERE tenant=? AND scope=? AND source_event_id=?').run(t,s,id)
     for (const d of db.prepare('SELECT id FROM pm_derived_v1 WHERE tenant=? AND scope=? AND own_event_id=?').all(t,s,id)) { db.prepare('INSERT OR IGNORE INTO pm_derived_tombstones VALUES(?,?,?)').run(t,s,d.id); db.prepare('DELETE FROM pm_derived_v1 WHERE tenant=? AND scope=? AND id=?').run(t,s,d.id) }
@@ -107,6 +114,8 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
   }
   const digestEvent = (e) => createHash('sha256').update(JSON.stringify([e.id, e.created, e.text, e.replies.map((r, i) => [r.id, i, r.text])])).digest('hex')
   const isPreferenceTainted = (e) => [e.text, ...e.replies.map(r => r.text)].some(text => /(?:喜欢|爱|偏好|常喝|总喝|不喜欢|不爱|不偏好)/.test(text))
+  const isProtectedTainted = (e) => [e.text, ...e.replies.map(r => r.text)].some(text => /(?:不要|别|不想|不许|禁止).{0,8}(?:记|提|说)|忘掉|删除记忆|撤回记忆|地址|住址|密码|身份证|手机号|银行卡/.test(text))
+  const isUnsafeSource = (e) => isPreferenceTainted(e) || isProtectedTainted(e)
 
   const selectClaims = (generation,query,inTransaction=false) => {
     if(typeof query!=='string'||query.length>512||/[“”‘’"'`\n\r]/.test(query)||!/我/.test(query)||!/(喜欢|爱喝|爱吃|偏好)/.test(query)||!/什么|啥|哪些|哪种|哪一|是什么/.test(query))return {events:[],incomplete:false}
@@ -180,7 +189,7 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
         const own = completeEvent(db.prepare('SELECT id,created,text,reply_count FROM pm_events WHERE tenant=? AND scope=? AND id=?').get(t,s,ownEventId))
         const sources = ids.map(id => completeEvent(db.prepare('SELECT id,created,text,reply_count FROM pm_events WHERE tenant=? AND scope=? AND id=?').get(t,s,id)))
         if (!own || sources.some(x => !x)) return false
-        if ([own, ...sources].some(isPreferenceTainted)) return false
+        if ([own, ...sources].some(isUnsafeSource)) return false
         const id = String(derivedId || ownEventId)
         if (db.prepare('SELECT 1 FROM pm_derived_tombstones WHERE tenant=? AND scope=? AND derived_id=?').get(t,s,id)) return false
         const ownDigest = digestEvent(own)
@@ -224,6 +233,97 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
         return Object.freeze(out)
       })
     },
+    registerConsolidated({ generation, id, kind, content, units, importance = 0 } = {}) {
+      generationNumber(generation)
+      if (!['episode_summary', 'relationship_event'].includes(kind)) throw new TypeError('invalid consolidation kind')
+      if (typeof content !== 'string' || !content.trim() || content.length > 2000) throw new TypeError('invalid consolidated content')
+      if (!Array.isArray(units) || units.length < 1 || units.length > 32) throw new TypeError('invalid consolidated units')
+      if (!Number.isSafeInteger(importance) || importance < 0 || importance > 3) throw new TypeError('invalid importance')
+      return transaction(() => {
+        requireAuthorization(generation)
+        const cleanUnits = []
+        const sourceIds = new Set()
+        for (const u of units) {
+          if (!u || typeof u.eventId !== 'string' || !['text', 'reply'].includes(u.field) || typeof u.quote !== 'string' || !u.quote.trim() || u.quote.length > 512) throw new TypeError('invalid unit')
+          const e = completeEvent(db.prepare('SELECT id,created,text,reply_count FROM pm_events WHERE tenant=? AND scope=? AND id=?').get(t,s,u.eventId))
+          if (!e || isUnsafeSource(e)) return false
+          let sourceText = e.text
+          if (u.field === 'reply') {
+            const r = e.replies.find(x => x.id === u.replyId)
+            if (!r) return false
+            sourceText = r.text
+          }
+          if (!sourceText.includes(u.quote)) return false
+          sourceIds.add(e.id)
+          cleanUnits.push({ eventId: e.id, field: u.field, ...(u.replyId ? { replyId: u.replyId } : {}), quote: u.quote, quoteHash: createHash('sha256').update(u.quote).digest('hex') })
+        }
+        const sources = [...sourceIds].sort().map(sourceEventId => {
+          const e = completeEvent(db.prepare('SELECT id,created,text,reply_count FROM pm_events WHERE tenant=? AND scope=? AND id=?').get(t,s,sourceEventId))
+          return { sourceEventId, digest: digestEvent(e) }
+        })
+        const expected = '那段时间留下了这些片段：' + cleanUnits.map(u => `「${u.quote}」`).join('；')
+        if (kind !== 'episode_summary' || content !== expected) return false
+        const payload = JSON.stringify({ units: cleanUnits })
+        const contentDigest = createHash('sha256').update(JSON.stringify([kind, content, cleanUnits])).digest('hex')
+        const sourceSetDigest = createHash('sha256').update(JSON.stringify(sources)).digest('hex')
+        const nodeId = id ? identifier(id) : createHash('sha256').update(JSON.stringify([t,s,generation,kind,1,1,contentDigest,sourceSetDigest])).digest('hex')
+        if (db.prepare('SELECT 1 FROM pm_consolidated_tombstones WHERE tenant=? AND scope=? AND node_id=?').get(t,s,nodeId)) return false
+        const existing = db.prepare('SELECT content_digest,source_set_digest FROM pm_consolidated_v1 WHERE tenant=? AND scope=? AND id=?').get(t,s,nodeId)
+        if (existing) return existing.content_digest === contentDigest && existing.source_set_digest === sourceSetDigest
+        db.prepare('INSERT INTO pm_consolidated_v1 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(t,s,nodeId,1,kind,generation,1,1,payload,content,contentDigest,sourceSetDigest,Date.now())
+        const insert = db.prepare('INSERT INTO pm_consolidated_sources_v1 VALUES(?,?,?,?,?)')
+        for (const src of sources) insert.run(t,s,nodeId,src.sourceEventId,src.digest)
+        db.prepare('INSERT OR IGNORE INTO pm_consolidated_rank_v1 VALUES(?,?,?,?,?,?,?)').run(t,s,nodeId,importance,0,null,null)
+        return true
+      })
+    },
+    consolidateRecent({ generation, limit = 5 } = {}) {
+      generationNumber(generation)
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 12) throw new TypeError('invalid limit')
+      const rows = historyRead(() => {
+        requireAuthorization(generation)
+        return db.prepare('SELECT id,created,text,reply_count FROM pm_events WHERE tenant=? AND scope=? ORDER BY created DESC,id ASC LIMIT ?').all(t,s,limit * 2)
+      })
+      const units = []
+      for (const row of rows) {
+        const e = completeEvent(row)
+        if (!e || isUnsafeSource(e)) continue
+        const quote = e.text.length > 120 ? e.text.slice(0, 120) : e.text
+        if (!quote.trim()) continue
+        units.push({ eventId: e.id, field: 'text', quote })
+        if (units.length >= limit) break
+      }
+      if (!units.length) return Object.freeze([])
+      const content = '那段时间留下了这些片段：' + units.map(u => `「${u.quote}」`).join('；')
+      const ok = this.registerConsolidated({ generation, kind: 'episode_summary', content, units, importance: 1 })
+      return Object.freeze(ok ? [content] : [])
+    },
+    loadConsolidated({ generation, limit = 4 } = {}) {
+      generationNumber(generation)
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 16) throw new TypeError('invalid limit')
+      return historyRead(() => {
+        requireAuthorization(generation)
+        const rows = db.prepare('SELECT id,kind,payload_json,content,content_digest,source_set_digest,created FROM pm_consolidated_v1 WHERE tenant=? AND scope=? AND generation=? AND schema=1 AND policy_version=1 AND template_version=1 ORDER BY created ASC,id ASC LIMIT ?').all(t,s,generation,limit)
+        const out = []
+        for (const row of rows) {
+          try {
+            const sources = db.prepare('SELECT source_event_id,event_digest FROM pm_consolidated_sources_v1 WHERE tenant=? AND scope=? AND node_id=? ORDER BY source_event_id').all(t,s,row.id)
+            if (!sources.length) continue
+            let valid = true
+            const resolved = []
+            for (const src of sources) {
+              const e = completeEvent(db.prepare('SELECT id,created,text,reply_count FROM pm_events WHERE tenant=? AND scope=? AND id=?').get(t,s,src.source_event_id))
+              if (!e || isUnsafeSource(e) || digestEvent(e) !== src.event_digest) { valid = false; break }
+              resolved.push({ eventId: e.id, created: e.created })
+            }
+            if (!valid) continue
+            const provenance = Object.freeze({ schema:1, kind:'consolidated', tenant:String(t), scope:String(s), generation, id:row.id, contentDigest:row.content_digest, sourceSetDigest:row.source_set_digest, sources:Object.freeze(resolved.map(x=>Object.freeze(x))) })
+            out.push(Object.freeze({ id:row.id, kind:row.kind, content:row.content, payload:Object.freeze(JSON.parse(row.payload_json)), provenance }))
+          } catch {}
+        }
+        return Object.freeze(out)
+      })
+    },
     episodeProvenance({ generation, eventIds } = {}) {
       generationNumber(generation)
       if (!Array.isArray(eventIds) || eventIds.length < 1 || eventIds.length > 32) throw new TypeError('invalid episode sources')
@@ -242,7 +342,7 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
     beginSession() { return transaction(()=>{const old=db.prepare('SELECT active FROM pm_sessions WHERE tenant=? AND scope=?').get(t,s);if(old?.active===1)db.prepare('INSERT INTO pm_fences VALUES(?,?,1) ON CONFLICT(tenant,scope) DO UPDATE SET gap=1').run(t,s);db.prepare('INSERT OR IGNORE INTO pm_preference_history SELECT tenant,scope,event_id,version,created,polarity,activity,object FROM pm_claims_v1 WHERE tenant=? AND scope=?').run(t,s);db.prepare('DELETE FROM pm_claims_v1 WHERE tenant=? AND scope=?').run(t,s);db.prepare('DELETE FROM pm_preference_fences WHERE tenant=? AND scope=?').run(t,s);db.prepare('INSERT INTO pm_sessions VALUES(?,?,1) ON CONFLICT(tenant,scope) DO UPDATE SET active=1').run(t,s);return old?.active!==1}) },
     endSession() { return transaction(()=>{db.prepare('UPDATE pm_sessions SET active=0 WHERE tenant=? AND scope=?').run(t,s);return true}) },
     markGap() { return transaction(()=>{db.prepare('INSERT INTO pm_fences VALUES(?,?,1) ON CONFLICT(tenant,scope) DO UPDATE SET gap=1').run(t,s);return true}) },
-    resetAfterGap() { return transaction(()=>{const current=auth();const fence=db.prepare('SELECT gap FROM pm_fences WHERE tenant=? AND scope=?').get(t,s);if(!current||fence?.gap!==1)throw Error('no gap to reset');if(current.generation>=Number.MAX_SAFE_INTEGER)throw Error('generation exhausted');for(const e of db.prepare('SELECT id FROM pm_events WHERE tenant=? AND scope=?').all(t,s))removeEvent(e.id);db.prepare('DELETE FROM pm_preference_fences WHERE tenant=? AND scope=?').run(t,s);db.prepare('DELETE FROM pm_preference_history WHERE tenant=? AND scope=?').run(t,s);db.prepare('DELETE FROM pm_derived_v1 WHERE tenant=? AND scope=?').run(t,s);db.prepare('DELETE FROM pm_derived_tombstones WHERE tenant=? AND scope=?').run(t,s);db.prepare('UPDATE pm_authorization SET generation=?,allowed=1 WHERE tenant=? AND scope=?').run(current.generation+1,t,s);db.prepare('UPDATE pm_fences SET gap=0 WHERE tenant=? AND scope=?').run(t,s);return current.generation+1}) },
+    resetAfterGap() { return transaction(()=>{const current=auth();const fence=db.prepare('SELECT gap FROM pm_fences WHERE tenant=? AND scope=?').get(t,s);if(!current||fence?.gap!==1)throw Error('no gap to reset');if(current.generation>=Number.MAX_SAFE_INTEGER)throw Error('generation exhausted');for(const e of db.prepare('SELECT id FROM pm_events WHERE tenant=? AND scope=?').all(t,s))removeEvent(e.id);db.prepare('DELETE FROM pm_preference_fences WHERE tenant=? AND scope=?').run(t,s);db.prepare('DELETE FROM pm_preference_history WHERE tenant=? AND scope=?').run(t,s);db.prepare('DELETE FROM pm_derived_v1 WHERE tenant=? AND scope=?').run(t,s);db.prepare('DELETE FROM pm_derived_tombstones WHERE tenant=? AND scope=?').run(t,s);db.prepare('DELETE FROM pm_consolidated_v1 WHERE tenant=? AND scope=?').run(t,s);db.prepare('DELETE FROM pm_consolidated_tombstones WHERE tenant=? AND scope=?').run(t,s);db.prepare('UPDATE pm_authorization SET generation=?,allowed=1 WHERE tenant=? AND scope=?').run(current.generation+1,t,s);db.prepare('UPDATE pm_fences SET gap=0 WHERE tenant=? AND scope=?').run(t,s);return current.generation+1}) },
     // Resume after a gap without deleting events. The missing interval is recorded;
     // this is not a claim that no recall notice was missed.
     resumeAfterGap({reason='',evidence='',now=Date.now()}={}) {
@@ -272,7 +372,7 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
         if (current && current.generation >= Number.MAX_SAFE_INTEGER) throw new Error('generation exhausted')
         const next = (current?.generation ?? 0) + 1
         db.prepare('INSERT INTO pm_authorization VALUES(?,?,?,?) ON CONFLICT(tenant,scope) DO UPDATE SET generation=excluded.generation,allowed=excluded.allowed').run(t,s,next,allowed ? 1 : 0)
-        if (!allowed) { for (const e of db.prepare('SELECT id FROM pm_events WHERE tenant=? AND scope=?').all(t,s)) removeEvent(e.id); db.prepare('DELETE FROM pm_claims_v1 WHERE tenant=? AND scope=?').run(t,s); db.prepare('DELETE FROM pm_preference_fences WHERE tenant=? AND scope=?').run(t,s); db.prepare('DELETE FROM pm_preference_history WHERE tenant=? AND scope=?').run(t,s); db.prepare('DELETE FROM pm_derived_v1 WHERE tenant=? AND scope=?').run(t,s); db.prepare('DELETE FROM pm_derived_tombstones WHERE tenant=? AND scope=?').run(t,s) }
+        if (!allowed) { for (const e of db.prepare('SELECT id FROM pm_events WHERE tenant=? AND scope=?').all(t,s)) removeEvent(e.id); db.prepare('DELETE FROM pm_claims_v1 WHERE tenant=? AND scope=?').run(t,s); db.prepare('DELETE FROM pm_preference_fences WHERE tenant=? AND scope=?').run(t,s); db.prepare('DELETE FROM pm_preference_history WHERE tenant=? AND scope=?').run(t,s); db.prepare('DELETE FROM pm_derived_v1 WHERE tenant=? AND scope=?').run(t,s); db.prepare('DELETE FROM pm_derived_tombstones WHERE tenant=? AND scope=?').run(t,s); db.prepare('DELETE FROM pm_consolidated_v1 WHERE tenant=? AND scope=?').run(t,s); db.prepare('DELETE FROM pm_consolidated_tombstones WHERE tenant=? AND scope=?').run(t,s) }
         return next
       })
     },
