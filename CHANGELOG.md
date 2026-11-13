@@ -1,4 +1,14 @@
-﻿# Changelog
+# Changelog
+
+## 0.3.0 - 2026-11-13
+
+- Add `memory.readPreference({ generation, activity, object })`: a read-only, exact self-reported preference lookup.
+- Latest `created` wins; a same-timestamp positive/negative pair returns `null` instead of silently picking a side.
+- Old claims remain as history; no schema migration, deletion, decay, or automatic merge.
+- Add `reader/`: explicit `catch` / `reply` / `none` classification and a bounded prompt increment.
+- Add regression tests for preference read/correction/ambiguity and reader signal routing.
+- Add `docs/READER.md` and integration limits.
+- Do not include host-specific chat orchestration, persona files, credentials, or conversation data.
 
 ## 0.2.0 - 2026-11-11
 

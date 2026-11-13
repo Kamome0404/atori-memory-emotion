@@ -120,6 +120,22 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
   return Object.freeze({
     // This is a privileged administrative operation, not an authentication mechanism.
     authorization() { const a=auth();return {allowed:a?.allowed===1,generation:a?.generation??0,gap:db.prepare('SELECT gap FROM pm_fences WHERE tenant=? AND scope=?').get(t,s)?.gap===1} },
+    // Layer-2 v0: exact, self-reported preference. Read-only; no inference,
+    // no schema change, no prompt injection.
+    readPreference({ generation, activity, object } = {}) {
+      generationNumber(generation)
+      if (!['喝', '吃', '听', '看'].includes(activity)) throw new TypeError('invalid activity')
+      if (typeof object !== 'string' || !/^[\u4e00-\u9fff]{1,16}$/.test(object)) throw new TypeError('invalid object')
+      return historyRead(() => {
+        requireAuthorization(generation)
+        const rows = db.prepare("SELECT event_id AS eventId, version, created, polarity, activity, object FROM pm_claims_v1 WHERE tenant=? AND scope=? AND kind='self_reported_preference' AND activity=? AND object=? ORDER BY created DESC, event_id ASC LIMIT 2").all(t, s, activity, object)
+        if (!rows.length) return null
+        const top = rows[0]
+        // Same timestamp, opposite polarity: do not pick a winner silently.
+        if (rows[1] && rows[1].created === top.created && rows[1].polarity !== top.polarity) return null
+        return Object.freeze({ ...top })
+      })
+    },
     beginSession() { return transaction(()=>{const old=db.prepare('SELECT active FROM pm_sessions WHERE tenant=? AND scope=?').get(t,s);if(old?.active===1)db.prepare('INSERT INTO pm_fences VALUES(?,?,1) ON CONFLICT(tenant,scope) DO UPDATE SET gap=1').run(t,s);db.prepare('INSERT INTO pm_sessions VALUES(?,?,1) ON CONFLICT(tenant,scope) DO UPDATE SET active=1').run(t,s);return old?.active!==1}) },
     endSession() { return transaction(()=>{db.prepare('UPDATE pm_sessions SET active=0 WHERE tenant=? AND scope=?').run(t,s);return true}) },
     markGap() { return transaction(()=>{db.prepare('INSERT INTO pm_fences VALUES(?,?,1) ON CONFLICT(tenant,scope) DO UPDATE SET gap=1').run(t,s);return true}) },

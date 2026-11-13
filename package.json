@@ -1,9 +1,9 @@
 {
   "name": "atori-memory-emotion",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
-  "description": "A small, retractable event-memory core and a minimal, non-scripted emotion-state layer for long-lived companion characters.",
+  "description": "Dependency-free event memory, a minimal non-scripted emotion layer, and a conservative read-person layer for long-lived companion characters.",
   "license": "MIT",
   "engines": {
     "node": ">=22.13"
@@ -14,7 +14,8 @@
     "./memory/onebot": "./portable-memory-core/onebot.mjs",
     "./emotion": "./emotion/emotion-state.mjs",
     "./emotion/impact": "./emotion/emotion-impact.mjs",
-    "./emotion/shadow": "./emotion/emotion-state-shadow.mjs"
+    "./emotion/shadow": "./emotion/emotion-state-shadow.mjs",
+    "./reader": "./reader/reader.mjs"
   },
   "scripts": {
     "test": "node scripts/test.mjs"
@@ -22,6 +23,7 @@
   "files": [
     "emotion/",
     "portable-memory-core/",
+    "reader/",
     "test/",
     "examples/",
     "docs/",

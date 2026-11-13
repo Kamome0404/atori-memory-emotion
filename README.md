@@ -1,9 +1,10 @@
 # atori-memory-emotion
 
-Two small, dependency-free Node.js modules for a long-lived companion character:
+Three small, dependency-free Node.js modules for a long-lived companion character:
 
 1. **Portable event memory** — private-scope conversation memory with confirmation, retrieval, retraction, tombstones, gap fencing, and resumable gaps.
 2. **Minimal emotion state** — a non-scripted state layer with inertia, uncertainty, residue, attention, and a relevance gate.
+3. **Conservative read-person layer** — three explicit modes (`catch`, `reply`, `none`) for the narrow case where a person asks to be heard, asks for an answer, or gives no explicit signal.
 
 This is not a chatbot, a model, a UI, or a hosted service. It does not call a network API. You bring your own model, transport, consent flow, and storage policy.
 
@@ -24,7 +25,7 @@ npm test
 
 ---
 
-## Why these two modules exist
+## Why these three modules exist
 
 Most “memory” and “emotion” add-ons are either:
 
@@ -54,6 +55,16 @@ uncertainty and residue are allowed
 attention is a hint, not a script
 ```
 
+### Reader
+
+```
+catch: the person explicitly asks to be heard first
+reply: the person explicitly asks for an answer
+none: no explicit signal; leave the caller's prompt unchanged
+```
+
+The reader stores no text and calls no model. It is intentionally narrow: ambiguity is `none`, not a guess.
+
 The emotion module stores **no raw chat text**. It stores a short mood, a few labels, event IDs, and a stance.
 
 ---
@@ -63,7 +74,8 @@ The emotion module stores **no raw chat text**. It stores a short mood, a few la
 ```text
 portable-memory-core/   memory core, adapter, OneBot bridge and tests
 emotion/                minimal emotion state, impact classifier, shadow recorder
-test/                   emotion tests
+reader/                 explicit-signal read-person classifier and prompt increment
+test/                   memory, emotion, preference, and reader tests
 examples/               runnable examples with dummy data
 docs/                   design notes
 scripts/test.mjs        cross-platform test runner
@@ -137,6 +149,22 @@ The classifier is deliberately small and imperfect. `emotion-impact.mjs` exposes
 
 ---
 
+## Quick start: reader
+
+```js
+import { readRequest, buildReaderPrompt } from './reader/reader.mjs'
+
+const mode = readRequest('先听我说，别急着给建议')
+// { mode: 'catch', matched: '先听我说', ... }
+
+const increment = buildReaderPrompt(mode)
+// '' for none; at most three lines for catch/reply
+```
+
+The caller decides where to inject the increment. `none` returns an empty string, so no prompt change is required.
+
+---
+
 ## Run the examples
 
 ```bash
@@ -154,7 +182,7 @@ Both examples use a temporary directory and dummy identities.
 npm test
 ```
 
-Current package: **16 test files**, including:
+The suite includes:
 
 ```
 memory isolation, recall, retraction, tombstones, gap resume
@@ -165,6 +193,8 @@ uncertainty, residue, attention
 salience-gated attention
 episode state (open / resolved / reopened)
 active-episode reuse
+self-reported preference read model (latest wins, corrections, ambiguity)
+reader catch / reply / none regression cases
 ```
 
 The tests use temporary databases and dummy users only.
@@ -189,6 +219,13 @@ The tests use temporary databases and dummy users only.
 - Injection is a hint. Do not let a state block override current facts or safety.
 - It does not learn or train itself.
 
+### Reader
+
+- It only reads explicit phrases. It cannot infer intent from silence, mood, or context.
+- `none` is the correct result for ambiguity; do not treat it as a failure.
+- It does not store conversation text.
+- The caller remains responsible for scope: owner/friend private chat, or group messages explicitly addressed to the character.
+
 ### Both
 
 - Not production-hardened.
@@ -201,6 +238,7 @@ The tests use temporary databases and dummy users only.
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/EMOTION.md](docs/EMOTION.md)
+- [docs/READER.md](docs/READER.md)
 - [docs/SECURITY.md](docs/SECURITY.md)
 
 ---
