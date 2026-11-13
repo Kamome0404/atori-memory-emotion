@@ -1,9 +1,9 @@
 {
   "name": "atori-memory-emotion",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": false,
   "type": "module",
-  "description": "Dependency-free event memory, a minimal non-scripted emotion layer, and a conservative read-person layer for long-lived companion characters.",
+  "description": "Dependency-free event memory, a minimal emotion layer, a conservative reader, and an audited preference layer for long-lived companion characters.",
   "license": "MIT",
   "engines": {
     "node": ">=22.13"
@@ -15,7 +15,11 @@
     "./emotion": "./emotion/emotion-state.mjs",
     "./emotion/impact": "./emotion/emotion-impact.mjs",
     "./emotion/shadow": "./emotion/emotion-state-shadow.mjs",
-    "./reader": "./reader/reader.mjs"
+    "./reader": "./reader/reader.mjs",
+    "./preference/registry": "./portable-memory-core/preference-registry.mjs",
+    "./preference/context": "./portable-memory-core/preference-context.mjs",
+    "./preference/policy": "./preference/preference-policy.mjs",
+    "./preference/reference": "./preference/memory-reference.mjs"
   },
   "scripts": {
     "test": "node scripts/test.mjs"
@@ -24,6 +28,7 @@
     "emotion/",
     "portable-memory-core/",
     "reader/",
+    "preference/",
     "test/",
     "examples/",
     "docs/",

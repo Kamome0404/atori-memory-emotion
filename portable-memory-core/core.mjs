@@ -128,11 +128,12 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
       if (typeof object !== 'string' || !/^[\u4e00-\u9fff]{1,16}$/.test(object)) throw new TypeError('invalid object')
       return historyRead(() => {
         requireAuthorization(generation)
-        const rows = db.prepare("SELECT event_id AS eventId, version, created, polarity, activity, object FROM pm_claims_v1 WHERE tenant=? AND scope=? AND kind='self_reported_preference' AND activity=? AND object=? ORDER BY created DESC, event_id ASC LIMIT 2").all(t, s, activity, object)
-        if (!rows.length) return null
-        const top = rows[0]
-        // Same timestamp, opposite polarity: do not pick a winner silently.
-        if (rows[1] && rows[1].created === top.created && rows[1].polarity !== top.polarity) return null
+        const maxRow = db.prepare("SELECT MAX(created) AS created FROM pm_claims_v1 WHERE tenant=? AND scope=? AND kind='self_reported_preference' AND activity=? AND object=?").get(t, s, activity, object)
+        if (!maxRow || maxRow.created == null) return null
+        const polarities = db.prepare("SELECT DISTINCT polarity FROM pm_claims_v1 WHERE tenant=? AND scope=? AND kind='self_reported_preference' AND activity=? AND object=? AND created=?").all(t, s, activity, object, maxRow.created)
+        if (polarities.length !== 1) return null
+        const top = db.prepare("SELECT event_id AS eventId, version, created, polarity, activity, object FROM pm_claims_v1 WHERE tenant=? AND scope=? AND kind='self_reported_preference' AND activity=? AND object=? AND created=? ORDER BY event_id ASC LIMIT 1").get(t, s, activity, object, maxRow.created)
+        if (!top) return null
         return Object.freeze({ ...top })
       })
     },

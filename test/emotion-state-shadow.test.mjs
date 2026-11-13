@@ -24,11 +24,11 @@ assert.equal(classified.uncertain, true)
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atri-emotion-shadow-state-'))
 try {
-  const disabled = createEmotionStateShadow({enabled: false, ownerUid: '1817108146', stateFilePath: path.join(dir, 'off.json'), classifier: fakeClassifier})
+  const disabled = createEmotionStateShadow({enabled: false, ownerUid: '1000000001', stateFilePath: path.join(dir, 'off.json'), classifier: fakeClassifier})
   assert.equal((await disabled.observe({eventId: 'x', confirmed: true, userText: '在吗', replyText: '在'})).reason, 'disabled')
 
   const stateFile = path.join(dir, 'owner.json')
-  const shadow = createEmotionStateShadow({enabled: true, ownerUid: '1817108146', stateFilePath: stateFile, classifier: fakeClassifier})
+  const shadow = createEmotionStateShadow({enabled: true, ownerUid: '1000000001', stateFilePath: stateFile, classifier: fakeClassifier})
   const r = await shadow.observe({eventId: 'qq:1', confirmed: true, userText: '你怎么这么笨', replyText: '……'})
   assert.match(shadow.attentionBlock(), /先注意/)
   assert.ok(!shadow.attentionBlock().includes('你怎么这么笨'))
@@ -49,7 +49,7 @@ try {
     {impact: 'neutral', focus: 'self', salience: 'low', intensity: 'soft', uncertain: false, mood: '平静', labels: ['平静']},
   ]
   const gated = createEmotionStateShadow({
-    enabled: true, ownerUid: '1817108146', stateFilePath: path.join(dir, 'gated.json'),
+    enabled: true, ownerUid: '1000000001', stateFilePath: path.join(dir, 'gated.json'),
     classifier: {async classify() { return queue.shift() }},
   })
   assert.equal(gated.nextAttentionBlock(), '')
@@ -71,7 +71,7 @@ try {
     {impact: 'hurt', focus: 'self', salience: 'high', intensity: 'normal', uncertain: false, mood: '自己也被刺到', labels: ['在意']},
   ]
   const injury = createEmotionStateShadow({
-    enabled: true, ownerUid: '1817108146', stateFilePath: path.join(dir, 'injury.json'),
+    enabled: true, ownerUid: '1000000001', stateFilePath: path.join(dir, 'injury.json'),
     classifier: {async classify() { return injuryQueue.shift() }},
   })
   await injury.observe({eventId: 'qq:inj1', confirmed: true, userText: '拉伤了', replyText: '疼得厉害吗'})
@@ -91,7 +91,7 @@ try {
     {impact: 'hurt', focus: 'self', salience: 'high', intensity: 'normal', episode: '玩笑被刺', uncertain: false, mood: '又提起', labels: ['在意']},
   ]
   const semantic = createEmotionStateShadow({
-    enabled: true, ownerUid: '1817108146', stateFilePath: path.join(dir, 'semantic.json'),
+    enabled: true, ownerUid: '1000000001', stateFilePath: path.join(dir, 'semantic.json'),
     classifier: {async classify() { return semanticQueue.shift() }},
   })
   await semantic.observe({eventId: 'qq:s1', confirmed: true, userText: 'a', replyText: 'b'})
@@ -116,7 +116,7 @@ try {
     {impact: 'worry', focus: 'other', salience: 'high', intensity: 'normal', episode: 'B', uncertain: false, mood: 'B again', labels: ['B']},
   ]
   const inter = createEmotionStateShadow({
-    enabled: true, ownerUid: '1817108146', stateFilePath: path.join(dir, 'interleaved.json'),
+    enabled: true, ownerUid: '1000000001', stateFilePath: path.join(dir, 'interleaved.json'),
     classifier: {async classify() { return interQueue.shift() }},
   })
   await inter.observe({eventId: 'qq:i1', confirmed: true, userText: 'a', replyText: 'b'})
@@ -133,7 +133,7 @@ try {
   let sawActive = null
   let ctxCall = 0
   const context = createEmotionStateShadow({
-    enabled: true, ownerUid: '1817108146', stateFilePath: path.join(dir, 'context.json'),
+    enabled: true, ownerUid: '1000000001', stateFilePath: path.join(dir, 'context.json'),
     classifier: {async classify(args) {
       ctxCall++
       if (ctxCall === 2) sawActive = args.activeEpisodes
@@ -153,7 +153,7 @@ try {
     {impact: 'worry', focus: 'other', salience: 'high', intensity: 'normal', episode: '腿痛', episodeState: 'reopened', uncertain: false, mood: '又疼了', labels: ['担心']},
   ]
   const episodeStateShadow = createEmotionStateShadow({
-    enabled: true, ownerUid: '1817108146', stateFilePath: path.join(dir, 'episode-state.json'),
+    enabled: true, ownerUid: '1000000001', stateFilePath: path.join(dir, 'episode-state.json'),
     classifier: {async classify() { return stateQueue.shift() }},
   })
   await episodeStateShadow.observe({eventId: 'qq:es1', confirmed: true, userText: 'a', replyText: 'b'})
@@ -178,13 +178,13 @@ try {
   assert.equal(softHurt.nextAttentionBlock(), '')
 
   const caring = createEmotionStateShadow({
-    enabled: true, ownerUid: '1817108146', stateFilePath: path.join(dir, 'caring.json'),
+    enabled: true, ownerUid: '1000000001', stateFilePath: path.join(dir, 'caring.json'),
     classifier: {async classify() { return {impact: 'worry', focus: 'other', intensity: 'normal', uncertain: false, mood: '有点担心，先听他说', labels: ['担心']} }},
   })
   assert.equal((await caring.observe({eventId: 'qq:care', confirmed: true, userText: '今天好累啊', replyText: '累就早点躺下吧'})).state.stance, 'quiet')
 
   const failed = createEmotionStateShadow({
-    enabled: true, ownerUid: '1817108146', stateFilePath: path.join(dir, 'failed.json'),
+    enabled: true, ownerUid: '1000000001', stateFilePath: path.join(dir, 'failed.json'),
     classifier: {async classify() { throw new Error('model down') }},
   })
   assert.equal((await failed.observe({eventId: 'qq:2', confirmed: true, userText: '在吗', replyText: '在'})).reason, 'classify_failed')

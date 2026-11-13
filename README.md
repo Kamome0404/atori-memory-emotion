@@ -1,10 +1,11 @@
 # atori-memory-emotion
 
-Three small, dependency-free Node.js modules for a long-lived companion character:
+Four small, dependency-free Node.js modules for a long-lived companion character:
 
 1. **Portable event memory** — private-scope conversation memory with confirmation, retrieval, retraction, tombstones, gap fencing, and resumable gaps.
 2. **Minimal emotion state** — a non-scripted state layer with inertia, uncertainty, residue, attention, and a relevance gate.
 3. **Conservative read-person layer** — three explicit modes (`catch`, `reply`, `none`) for the narrow case where a person asks to be heard, asks for an answer, or gives no explicit signal.
+4. **Audited preference layer** — one registry for write/read/question terms, multi-object mention parsing, stale-positive filtering, and a send-time reference check.
 
 This is not a chatbot, a model, a UI, or a hosted service. It does not call a network API. You bring your own model, transport, consent flow, and storage policy.
 
@@ -25,7 +26,7 @@ npm test
 
 ---
 
-## Why these three modules exist
+## Why these four modules exist
 
 Most “memory” and “emotion” add-ons are either:
 
@@ -55,6 +56,14 @@ uncertainty and residue are allowed
 attention is a hint, not a script
 ```
 
+### Preference
+
+- Only explicit self-reported claims; no inference from behavior or mood.
+- The object registry is intentionally finite. Unknown nouns fail closed.
+- A negative claim suppresses the old positive. It does not rewrite stored evidence.
+- `REGISTRY_VERSION` is not the claim extractor version.
+- Untracked free-text summaries cannot be guaranteed clean; callers should remove blocks they cannot trace.
+
 ### Reader
 
 ```
@@ -64,6 +73,18 @@ none: no explicit signal; leave the caller's prompt unchanged
 ```
 
 The reader stores no text and calls no model. It is intentionally narrow: ambiguity is `none`, not a guess.
+
+### Preference
+
+```
+explicit self-reported claim
+audited object registry
+find all mentions, inject at most one
+remove stale positive clauses
+send-time reference check
+```
+
+It never infers a preference from behavior, mood, or a third-party statement.
 
 The emotion module stores **no raw chat text**. It stores a short mood, a few labels, event IDs, and a stance.
 
@@ -75,6 +96,7 @@ The emotion module stores **no raw chat text**. It stores a short mood, a few la
 portable-memory-core/   memory core, adapter, OneBot bridge and tests
 emotion/                minimal emotion state, impact classifier, shadow recorder
 reader/                 explicit-signal read-person classifier and prompt increment
+preference/             preference policy and send-time reference check
 test/                   memory, emotion, preference, and reader tests
 examples/               runnable examples with dummy data
 docs/                   design notes
@@ -165,6 +187,21 @@ The caller decides where to inject the increment. `none` returns an empty string
 
 ---
 
+## Quick start: preference
+
+```js
+import { findPreferenceMentions } from './portable-memory-core/preference-context.mjs'
+import { createPreferenceTurn } from './preference/preference-policy.mjs'
+import { referenceStillCurrent } from './preference/memory-reference.mjs'
+
+const mentions = findPreferenceMentions('我想喝咖啡还是茶？')
+const turn = createPreferenceTurn({ mentions, claim: null })
+const safeBlock = turn.sanitizeBlock('## old\n我喜欢喝咖啡。')
+const current = referenceStillCurrent({ used: true, turn: null })
+```
+
+---
+
 ## Run the examples
 
 ```bash
@@ -219,6 +256,14 @@ The tests use temporary databases and dummy users only.
 - Injection is a hint. Do not let a state block override current facts or safety.
 - It does not learn or train itself.
 
+### Preference
+
+- Only explicit self-reported claims; no inference from behavior or mood.
+- The object registry is intentionally finite. Unknown nouns fail closed.
+- A negative claim suppresses the old positive. It does not rewrite stored evidence.
+- `REGISTRY_VERSION` is not the claim extractor version.
+- Untracked free-text summaries cannot be guaranteed clean; callers should remove blocks they cannot trace.
+
 ### Reader
 
 - It only reads explicit phrases. It cannot infer intent from silence, mood, or context.
@@ -239,6 +284,7 @@ The tests use temporary databases and dummy users only.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/EMOTION.md](docs/EMOTION.md)
 - [docs/READER.md](docs/READER.md)
+- [docs/PREFERENCE.md](docs/PREFERENCE.md)
 - [docs/SECURITY.md](docs/SECURITY.md)
 
 ---

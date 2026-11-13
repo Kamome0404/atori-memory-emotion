@@ -107,6 +107,15 @@ test('7 同时间相反极性为歧义，不静默选一个', () => {
   close(c)
 })
 
+test('9 同时间第三条相反极性也不能漏掉', () => {
+  const { c, generation } = boot()
+  add(c, generation, 'e9a', '我喜欢喝咖啡', 1000)
+  add(c, generation, 'e9b', '我不喜欢喝咖啡', 1000)
+  add(c, generation, 'e9c', '我喜欢喝咖啡', 1000)
+  assert.equal(c.readPreference({ generation, activity: '喝', object: '咖啡' }), null)
+  close(c)
+})
+
 test('8 未授权/过期 generation 拒绝读取', () => {
   const { c, generation } = boot()
   assert.throws(() => c.readPreference({ generation: generation + 1, activity: '喝', object: '咖啡' }), /authorization/)

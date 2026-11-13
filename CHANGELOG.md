@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0 - 2026-11-13
+
+- Add one audited preference registry shared by claim extraction and context lookup.
+- Add `REGISTRY_VERSION`; claim extractor version remains independent.
+- Add multi-object mention parsing with text-order and boundary rules.
+- Add stale-positive clause filtering with object/predicate pairing and negation handling.
+- Add send-time reference validation (`referenceStillCurrent`).
+- Add compose-shaped tests for final-message filtering.
+- Expand tests to 65.
+- Do not include host-specific chat orchestration, persona files, credentials, or conversation data.
+
 ## 0.3.0 - 2026-11-13
 
 - Add `memory.readPreference({ generation, activity, object })`: a read-only, exact self-reported preference lookup.
