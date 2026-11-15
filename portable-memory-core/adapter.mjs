@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import {DatabaseSync} from 'node:sqlite'
 const id=v=>typeof v==='string'&&v.length>0&&v.length<=200&&!/[\u0000-\u001f\u007f]/.test(v)
 function deepFreeze(x){if(x&&typeof x==='object'&&!Object.isFrozen(x)){Object.freeze(x);for(const v of Object.values(x))deepFreeze(v)}return x}
-export function createMemoryAdapter({dbPath,users,enabled=false}={}){
+export function createMemoryAdapter({dbPath,users,enabled=false,onRevoked=null}={}){
  if(typeof enabled!=='boolean'||!Array.isArray(users)||users.some(u=>!id(u))||new Set(users).size!==users.length)throw Error('invalid memory configuration')
  const permitted=new Set(users),allUsers=users.length===1&&users[0]==='*',cores=new Map(),blocked=new Set(),unpersisted=new Set(),started=new Set();let closed=false
  function startSession(uid,c){if(!started.has(uid)){if(!c.beginSession())blocked.add(uid);started.add(uid)}}
@@ -20,6 +20,11 @@ export function createMemoryAdapter({dbPath,users,enabled=false}={}){
  return Object.freeze({
   consent({uid,action,authenticated=false,disclosed=false}={}){const c=core(uid,action==='withdraw');if(!c||authenticated!==true||!['grant','withdraw'].includes(action)||(action==='grant'&&disclosed!==true))return false;try{const result=c.setAuthorization(action==='grant');if(action==='grant')startSession(uid,c);return result}catch(e){gap(uid,c);throw e}},
   status(uid){const c=core(uid,true);if(!c)return null;const s=c.authorization();return {allowed:s.allowed,gap:s.gap||blocked.has(uid),seen:s.generation>0,generation:s.generation}},
+  projectConfirmedExchange({uid,eventId}={}){
+    const c=cores.get(String(uid)); if(!c) return null
+    const s=c.authorization(); if(!s.allowed||s.gap||blocked.has(String(uid))) return null
+    try{return c.projectConfirmedEvent({eventId,generation:s.generation})}catch{return null}
+  },
   readPreference({uid,activity,object}={}){
    const c=core(uid);if(!c)return null;const s=c.authorization();if(!s.allowed||s.gap||blocked.has(uid))return null
    try{return c.readPreference({generation:s.generation,activity,object})}catch{return null}
@@ -46,8 +51,8 @@ export function createMemoryAdapter({dbPath,users,enabled=false}={}){
     return deepFreeze({schema:1,kind:'preference',tenant:String(uid),scope:`private:${uid}`,generation:provenance.generation,mentions})
    }catch{return null}
   },
-  resetAfterGap({uid,authenticated=false}={}){const c=core(uid,true);if(!c||authenticated!==true)return false;try{const result=c.resetAfterGap();blocked.delete(uid);unpersisted.delete(uid);return result}catch{return false}},
-  notice({uid,kind,messageId,authenticated=false}={}){const c=core(uid,true);if(!c||authenticated!==true||!id(messageId)||!['event','reply'].includes(kind))return false;try{return kind==='event'?c.revokeEvent(messageId):c.revokeReply(messageId)}catch{gap(uid,c);return false}},
+  resetAfterGap({uid,authenticated=false}={}){const c=core(uid,true);if(!c||authenticated!==true)return false;try{const result=c.resetAfterGap();blocked.delete(uid);unpersisted.delete(uid);return result}catch{return false}},resumeAfterGap({uid,reason='',evidence='',now=Date.now(),authenticated=false}={}){const c=core(uid,true);if(!c||authenticated!==true)return null;try{const result=c.resumeAfterGap({reason,evidence,now});blocked.delete(uid);unpersisted.delete(uid);return result}catch{return null}},
+  notice({uid,kind,messageId,authenticated=false}={}){const c=core(uid,true);if(!c||authenticated!==true||!id(messageId)||!['event','reply'].includes(kind))return false;try{const ok=kind==='event'?c.revokeEvent(messageId):c.revokeReply(messageId);if(ok&&typeof onRevoked==='function'){try{onRevoked({uid:String(uid),kind,messageId:String(messageId)})}catch{}}return ok}catch{gap(uid,c);return false}},
   begin({uid,scopeKind,eventId,created,text,query,authenticated=false}={}){
    if(authenticated!==true||scopeKind!=='direct'||!id(uid)||!id(eventId)||!Number.isSafeInteger(created)||created<0||typeof text!=='string'||!text.trim())return null
    const c=core(uid);if(!c)return null;let state=c.authorization();const prefMentions=findPreferenceMentions(text);if(state.generation===0&&!state.gap){try{if(c.enrollIfUnseen()===null)return null;startSession(uid,c);state=c.authorization()}catch{gap(uid,c);return null}}if(!state.allowed||state.gap)return null

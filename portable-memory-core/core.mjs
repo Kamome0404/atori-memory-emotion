@@ -303,7 +303,7 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 16) throw new TypeError('invalid limit')
       return historyRead(() => {
         requireAuthorization(generation)
-        const rows = db.prepare('SELECT id,kind,payload_json,content,content_digest,source_set_digest,created FROM pm_consolidated_v1 WHERE tenant=? AND scope=? AND generation=? AND schema=1 AND policy_version=1 AND template_version=1 ORDER BY created ASC,id ASC LIMIT ?').all(t,s,generation,limit)
+        const rows = db.prepare('SELECT id,kind,payload_json,content,content_digest,source_set_digest,created FROM pm_consolidated_v1 WHERE tenant=? AND scope=? AND generation=? AND schema=1 AND policy_version=1 AND template_version=1 ORDER BY created DESC,id DESC LIMIT ?').all(t,s,generation,limit).reverse()
         const out = []
         for (const row of rows) {
           try {
@@ -317,8 +317,11 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
               resolved.push({ eventId: e.id, created: e.created })
             }
             if (!valid) continue
+            const payload = JSON.parse(row.payload_json)
+            const computed = createHash('sha256').update(JSON.stringify([row.kind, row.content, payload.units])).digest('hex')
+            if (computed !== row.content_digest) continue
             const provenance = Object.freeze({ schema:1, kind:'consolidated', tenant:String(t), scope:String(s), generation, id:row.id, contentDigest:row.content_digest, sourceSetDigest:row.source_set_digest, sources:Object.freeze(resolved.map(x=>Object.freeze(x))) })
-            out.push(Object.freeze({ id:row.id, kind:row.kind, content:row.content, payload:Object.freeze(JSON.parse(row.payload_json)), provenance }))
+            out.push(Object.freeze({ id:row.id, kind:row.kind, content:row.content, payload:Object.freeze(payload), provenance }))
           } catch {}
         }
         return Object.freeze(out)
@@ -483,6 +486,22 @@ export function createMemoryCore({ dbPath, tenant, scope, scopeKind } = {}) {
       for(const e of events){if(!e||typeof e.id!=='string'||!Number.isSafeInteger(e.created)||typeof e.text!=='string'||(e.nearbyOf!==undefined&&typeof e.nearbyOf!=='string'))throw new TypeError('invalid reference event')}
       if(query!==undefined&&(typeof query!=='string'||typeof claimsSignature!=='string'))throw new TypeError('invalid query revalidation')
       return recheck(generation,events,incomplete,query===undefined?null:()=>JSON.stringify(selectClaims(generation,query,true).events.map(e=>[e.id,e.created,e.text]))===claimsSignature,episodeContext)
+    },
+    projectConfirmedEvent({ eventId, generation } = {}) {
+      generationNumber(generation)
+      requireAuthorization(generation)
+      if (!eventId || String(eventId).length > 200 || tombstoned('event', eventId)) return null
+      const e = db.prepare('SELECT id,created,text FROM pm_events WHERE tenant=? AND scope=? AND id=?').get(t, s, String(eventId))
+      if (!e) return null
+      const replies = db.prepare('SELECT id,text,ordinal FROM pm_replies WHERE tenant=? AND scope=? AND event_id=? ORDER BY ordinal').all(t, s, String(eventId))
+        .map(r => ({ id: String(r.id), ordinal: Number(r.ordinal), text: String(r.text) }))
+      const canonical = JSON.stringify([t, s, generation, e.id, e.created, e.text, replies])
+      return {
+        tenant: t, scope: s, generation, eventId: String(e.id), eventAt: Number(e.created),
+        eventDigest: createHash('sha256').update(canonical).digest('hex'),
+        userText: String(e.text), replies,
+        snapshotDigest: createHash('sha256').update(canonical).digest('hex'),
+      }
     },
     close() { db.close() },
   })

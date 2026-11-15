@@ -17,6 +17,7 @@ test('command and tick keep owner/consent behavior', async () => {
     schedule: () => ({ ok: true, notBefore: 1 }),
     due: () => ({ token: 't', uid: '10001', text: '喝水', consentVersion: 1 }),
     finish: (token, outcome) => calls.push([token, outcome]),
+    validateSending: () => true,
     markIncoming: () => {}, revokeSource: () => true,
   }
   const rt = createProactiveV5Runtime({
@@ -27,6 +28,6 @@ test('command and tick keep owner/consent behavior', async () => {
   assert.equal(await rt.handleCommand({ message_type: 'private', raw_message: '开启主动联系' }, '10001'), true)
   assert.equal(await rt.handleCommand({ message_type: 'private', raw_message: '提醒我十分钟后喝水' }, '10001'), true)
   await rt.tick()
-  assert.deepEqual(calls[0], ['10001', '好，我只在明确约定的事情上主动找你；随时发“关闭主动联系”可以停。'])
+  assert.deepEqual(calls[0], ['10001', '好，我会记着；不想被提醒的时候，跟我说关掉就好。'])
   assert.equal(calls.some(x => x[0] === 't' && x[1] === 'confirmed'), true)
 })

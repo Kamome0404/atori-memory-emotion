@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0 - 2026-11-15
+
+- Add confirmed-exchange projection for downstream memory consumers.
+- Add owner-authorized `resumeAfterGap` to the adapter/OneBot bridge; preserves events and records the gap resolution.
+- Expose revocation notifications through `onRevoked`; callers can invalidate dependent derived references.
+- Add full approved-candidate reads and revoked-source handling in runtime integrations.
+- Add single-job cancellation and stricter delivery validation to the proactive runtime.
+- Keep all four modules dependency-free; 109 tests pass.
+
 ## 0.7.1 - 2026-11-13
 
 - Normalize UID at the adapter boundary; numeric and string UIDs now revalidate identically.

@@ -7,9 +7,9 @@ export function normalizePortableUsers(raw,{owners=[],ownerShadow=false}={}){
  if(!users.length||!(users.length===1&&users[0]==='*')&&users.some(x=>!/^\d{5,20}$/.test(x)))throw Error('invalid memory users')
  return users
 }
-export function createOneBotMemory({dbPath,selfId,users,enabled=false,clock=()=>Date.now()}={}){
+export function createOneBotMemory({dbPath,selfId,users,enabled=false,clock=()=>Date.now(),onRevoked=null}={}){
  if(typeof selfId!=='string'||!Array.isArray(users)||typeof clock!=='function')throw Error('invalid OneBot configuration')
- const service=createMemoryAdapter({dbPath,users,enabled}),pending=new Map(),members=new Set(users),allUsers=users.length===1&&users[0]==='*'
+ const service=createMemoryAdapter({dbPath,users,enabled,onRevoked}),pending=new Map(),members=new Set(users),allUsers=users.length===1&&users[0]==='*'
  const member=uid=>uid!==selfId&&/^\d{5,20}$/.test(uid)&&(allUsers||members.has(uid))
  const validMid=x=>(typeof x==='string'||(typeof x==='number'&&Number.isSafeInteger(x)))&&/^\-?[1-9]\d{0,18}$/.test(String(x))
  function privateIdentity(e){if(e?.post_type!=='message'||e.message_type!=='private'||e.group_id!=null||String(e.self_id)!==selfId||!member(String(e.user_id))||String(e.sender?.user_id)!==String(e.user_id)||!validMid(e.message_id)||!Array.isArray(e.message)||!e.message.length||e.message.some(p=>p?.type!=='text'||typeof p?.data?.text!=='string'))return null;return String(e.user_id)}
@@ -25,6 +25,8 @@ export function createOneBotMemory({dbPath,selfId,users,enabled=false,clock=()=>
   disclosureDelivered(uid,receipt){if(!member(uid)||receipt?.status!=='ok'||receipt?.retcode!==0||!validMid(receipt?.data?.message_id))return false;pending.set(uid,clock()+600000);return true},
   begin(event){const uid=privateIdentity(event);if(!uid||!Number.isSafeInteger(event.time)||event.time<1)return null;const text=textOf(event),query=typeof event.queryText==='string'&&event.queryText.trim()?event.queryText:text;const turn=service.begin({uid,scopeKind:'direct',eventId:String(event.message_id),created:event.time*1000,text,query,authenticated:true});if(!turn)return null;return Object.freeze({generation:turn.generation,take:()=>turn.reference,attempt:turn.attempt,confirm(text,r){turn.confirm(text,{status:r?.status,retcode:r?.retcode,id:r?.data?.message_id})},failed:turn.failed,unsupported:turn.unsupported,finish:turn.finish})},
   status(uid){return service.status(uid)},
+ resumeAfterGap({uid,reason,evidence}={}){return service.resumeAfterGap({uid,reason,evidence,authenticated:true})},
+ projectConfirmedExchange({uid,eventId}={}){return service.projectConfirmedExchange({uid,eventId})},
   readPreference(args){return service.readPreference(args)},
   readPreferenceHistory(args){return service.readPreferenceHistory(args)},
   revalidatePreference(args){return service.revalidatePreference(args)},
