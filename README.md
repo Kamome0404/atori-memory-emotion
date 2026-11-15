@@ -1,11 +1,13 @@
 # atori-memory-emotion
 
-Four small, dependency-free Node.js modules for a long-lived companion character:
+Six small, dependency-free Node.js memory modules for a long-lived companion character:
 
 1. **Portable event memory** — private-scope conversation memory with confirmation, retrieval, retraction, tombstones, gap fencing, and resumable gaps.
 2. **Minimal emotion state** — a non-scripted state layer with inertia, uncertainty, residue, attention, and a relevance gate.
 3. **Conservative read-person layer** — three explicit modes (`catch`, `reply`, `none`) for the narrow case where a person asks to be heard, asks for an answer, or gives no explicit signal.
 4. **Audited preference layer** — one registry for write/read/question terms, multi-object mention parsing, stale-positive filtering, and a send-time reference check.
+5. **Review-gated autobio layer** — candidate/review/digest/source-revocation plus an optional unique-match selector.
+6. **Hippocampus shadow** — owner-consented confirmed-exchange storage with tombstones, worker queue and a read-only viewer.
 
 This is not a chatbot, a model, a UI, or a hosted service. It does not call a network API. You bring your own model, transport, consent flow, and storage policy.
 
@@ -95,9 +97,11 @@ The emotion module stores **no raw chat text**. It stores a short mood, a few la
 ```text
 portable-memory-core/   memory core, adapter, OneBot bridge and tests
 emotion/                minimal emotion state, impact classifier, shadow recorder
+autobio/                review-gated approved references and auto-recall selector
+hippocampus/            consent-gated shadow storage, worker queue and read model
 reader/                 explicit-signal read-person classifier and prompt increment
 preference/             preference policy and send-time reference check
-test/                   memory, emotion, preference, and reader tests
+test/                   memory, emotion, preference, reader, autobio and hippocampus tests
 examples/               runnable examples with dummy data
 docs/                   design notes
 scripts/test.mjs        cross-platform test runner

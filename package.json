@@ -1,6 +1,6 @@
 {
   "name": "atori-memory-emotion",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": false,
   "type": "module",
   "description": "Dependency-free event memory, a minimal emotion layer, a conservative reader, and an audited preference layer for long-lived companion characters.",
@@ -19,7 +19,19 @@
     "./preference/registry": "./portable-memory-core/preference-registry.mjs",
     "./preference/context": "./portable-memory-core/preference-context.mjs",
     "./preference/policy": "./preference/preference-policy.mjs",
-    "./preference/reference": "./preference/memory-reference.mjs"
+    "./preference/reference": "./preference/memory-reference.mjs",
+    "./autobio": "./autobio/runtime.mjs",
+    "./autobio/contracts": "./autobio/contracts.mjs",
+    "./autobio/policy": "./autobio/policy.mjs",
+    "./autobio/store": "./autobio/store.mjs",
+    "./autobio/integration": "./autobio/integration.mjs",
+    "./autobio/auto-recall": "./autobio/auto-recall.mjs",
+    "./autobio/link": "./autobio/link.mjs",
+    "./autobio/factory": "./autobio/factory.mjs",
+    "./hippocampus": "./hippocampus/hippocampus-sqlite.mjs",
+    "./hippocampus/view": "./hippocampus/hippocampus-memory-view.mjs",
+    "./hippocampus/shadow": "./hippocampus/hippocampus-shadow.mjs",
+    "./hippocampus/worker-queue": "./hippocampus/hippocampus-worker-queue.mjs"
   },
   "scripts": {
     "test": "node scripts/test.mjs"
@@ -36,6 +48,8 @@
     "README.md",
     "LICENSE",
     "SECURITY.md",
-    "runtime/"
+    "runtime/",
+    "autobio/",
+    "hippocampus/"
   ]
 }

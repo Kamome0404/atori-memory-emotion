@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.0 - 2026-11-15
+
+- Add `autobio/`: review-gated candidates, strict scope/digest review, source revocation, send-time revalidation, and an optional unique-match auto-recall selector.
+- Add `hippocampus/`: owner-consented confirmed text/voice shadow, durable process nonce, reply tombstones, ambiguity-safe retract, worker queue and a read-only memory viewer.
+- Add module tests and documentation; package now exposes autobio/hippocampus entry points.
+- No host data, config, credentials, logs or conversation exports are included.
+- 162 tests pass.
+
 ## 0.8.0 - 2026-11-15
 
 - Add confirmed-exchange projection for downstream memory consumers.
