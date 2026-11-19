@@ -1,6 +1,6 @@
 {
   "name": "atori-memory-emotion",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": false,
   "type": "module",
   "description": "Dependency-free event memory, a minimal emotion layer, a conservative reader, and an audited preference layer for long-lived companion characters.",
@@ -31,7 +31,13 @@
     "./hippocampus": "./hippocampus/hippocampus-sqlite.mjs",
     "./hippocampus/view": "./hippocampus/hippocampus-memory-view.mjs",
     "./hippocampus/shadow": "./hippocampus/hippocampus-shadow.mjs",
-    "./hippocampus/worker-queue": "./hippocampus/hippocampus-worker-queue.mjs"
+    "./hippocampus/worker-queue": "./hippocampus/hippocampus-worker-queue.mjs",
+    "./hippocampus/state": "./hippocampus/memory-state-contract.mjs",
+    "./hippocampus/time": "./hippocampus/memory-time-cue.mjs",
+    "./hippocampus/scene": "./hippocampus/hippocampus-scene-index.mjs",
+    "./hippocampus/timeline": "./hippocampus/memory-timeline-view.mjs",
+    "./hippocampus/timeline-sources": "./hippocampus/memory-timeline-sources.mjs",
+    "./hippocampus/forget": "./hippocampus/forget-closure.mjs"
   },
   "scripts": {
     "test": "node scripts/test.mjs"

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0 - 2026-11-19
+
+- Add `hippocampus/memory-state-contract.mjs`: pure 30/180-day state overlay, owner-confirmed weight, pinned/uncertain/invalidated handling.
+- Add `hippocampus/memory-time-cue.mjs`: explicit Shanghai-day cue parsing only.
+- Add `hippocampus/hippocampus-scene-index.mjs`: owner-scoped scene-index head, staging, source validation, atomic publish/reconcile, read-only probe, and forget filtering.
+- Add `hippocampus/memory-timeline-view.mjs` and `memory-timeline-sources.mjs`: bounded read-only timeline projection and source adapters.
+- Add `hippocampus/forget-closure.mjs`: advisory forget list, normalized QQ inbound ids, source/conv cleanup helpers, autobio invalidation.
+- Update `hippocampus/hippocampus-sqlite.mjs` with the memory-state event cursors and state overlay.
+- Add smoke tests; package remains dependency-free.
+- No host data, paths, credentials, logs, persona or conversation exports are included.
+
 ## 0.9.0 - 2026-11-15
 
 - Add `autobio/`: review-gated candidates, strict scope/digest review, source revocation, send-time revalidation, and an optional unique-match auto-recall selector.

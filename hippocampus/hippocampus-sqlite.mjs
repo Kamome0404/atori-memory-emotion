@@ -16,6 +16,7 @@ const MAX_ID = 256
 const MAX_REPLIES = 8
 const DAY = 86400000
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/
+import { deriveMemoryState } from './memory-state-contract.mjs'
 const SCHEMA_VERSION = '4'
 
 function text(value, name, max = MAX_TEXT) {
@@ -580,6 +581,100 @@ export class HippocampusSqlite {
       this.db.prepare('INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(this._shadowKey(s), JSON.stringify(value))
       this.db.prepare('INSERT INTO meta(key,value) VALUES(?,?)').run(cmdKey, JSON.stringify({ granted, revision, runNonce: nonce }))
       return { accepted: true, duplicate: false, granted, revision, runNonce: nonce }
+    })
+  }
+
+  getDecayCursor() {
+    const row = this.db.prepare('SELECT value FROM meta WHERE key=?').get('memdecay:cursor')
+    if (!row) return null
+    try { return JSON.parse(row.value) } catch { throw new InputError('decay cursor corrupt') }
+  }
+
+  setDecayCursor({ at, eventId } = {}) {
+    const t = timestamp(at, 'at')
+    const e = id(eventId, 'eventId')
+    return withTransaction(this.db, () => {
+      this.db.prepare('INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('memdecay:cursor', JSON.stringify({ at: t, eventId: e }))
+      return { accepted: true }
+    })
+  }
+
+  getMemoryState({ key, scope, uid } = {}) {
+    const k = id(key, 'key').slice(0, 512)
+    if (scope != null || uid != null) {
+      let parts = null
+      try { parts = JSON.parse(k) } catch {}
+      if (!Array.isArray(parts) || String(parts[1] || '') !== String(scope || '') || String(parts[2] || '') !== String(uid || '')) throw new ScopeError('memory key owner mismatch')
+    }
+    const row = this.db.prepare('SELECT value FROM meta WHERE key=?').get(`memstate:${k}`)
+    if (!row) return null
+    try { return JSON.parse(row.value) } catch { throw new InputError('memory state corrupt') }
+  }
+
+  recordMemoryEvent({ key, operationId, type, at, sourceRefs = [], scope, uid, sourceAt, expectedRevision } = {}) {
+    const k = id(key, 'key').slice(0, 512)
+    let parts = null
+    try { parts = JSON.parse(k) } catch {}
+    if (!Array.isArray(parts)) throw new InputError('memory key must be a tuple')
+    if (String(parts[1] || '') !== String(scope || '') || String(parts[2] || '') !== String(uid || '')) throw new ScopeError('memory key owner mismatch')
+    const op = id(operationId, 'operationId')
+    const t = timestamp(at, 'at')
+    const allowed = new Set(['recalled', 'response_confirmed', 'owner_confirmed', 'correction_observed', 'state_weakened', 'state_archived', 'state_restored', 'source_invalidated'])
+    if (!allowed.has(String(type || ''))) throw new InputError('unknown memory event')
+    return withTransaction(this.db, () => {
+      const opKey = `memop:${op}`
+      const prior = this.db.prepare('SELECT value FROM meta WHERE key=?').get(opKey)
+      if (prior) {
+        let p = null
+        try { p = JSON.parse(prior.value) } catch {}
+        const sameRefs = JSON.stringify(p?.sourceRefs || []) === JSON.stringify(sourceRefs.slice(0, 6))
+        if (p && String(p.key) === k && String(p.type) === String(type) && Number(p.at) === t && sameRefs) return { accepted: false, duplicate: true }
+        throw new ConflictError('operationId already used with different request')
+      }
+      if (type === 'owner_confirmed' && (!Array.isArray(sourceRefs) || !sourceRefs.length)) throw new InputError('owner_confirmed requires source evidence')
+      const stateKey = `memstate:${k}`
+      const row = this.db.prepare('SELECT value FROM meta WHERE key=?').get(stateKey)
+      let cur = null
+      if (row) { try { cur = JSON.parse(row.value) } catch { throw new InputError('memory state corrupt') } }
+      if (expectedRevision != null && Number(expectedRevision) !== Number(cur?.revision || 0)) throw new ConflictError('memory state revision changed')
+      if (['response_confirmed', 'owner_confirmed', 'state_restored', 'correction_observed'].includes(String(type)) && parts[0] === 'hippocampus') {
+        const ss = String(parts[1] || ''), uu = String(parts[2] || ''), ee = String(parts[3] || '')
+        const ev = this.db.prepare('SELECT 1 AS present FROM events WHERE scope=? AND uid=? AND event_id=?').get(ss, uu, ee)
+        const tomb = this.db.prepare('SELECT 1 AS present FROM tombstones WHERE scope=? AND uid=? AND event_id=?').get(ss, uu, ee)
+        if (!ev || tomb) throw new ConflictError('memory source is not current')
+        if (type === 'state_restored' && cur?.sourceValidity === 'invalidated') throw new ConflictError('memory source invalidated')
+      }
+      const rev = Number(cur?.revision || 0) + 1
+      const initial = cur ? null : deriveMemoryState({ at: Number.isFinite(Number(sourceAt)) ? Number(sourceAt) : t, now: t, sourceValidity: 'current' })
+      const next = {
+        schema: 1, key: k, revision: rev,
+        state: cur?.state || initial?.state || 'active',
+        sourceValidity: cur?.sourceValidity || 'current',
+        confidence: { level: cur?.confidence?.level || 'unassessed', retrievalWeight: Number.isFinite(Number(cur?.confidence?.retrievalWeight)) ? Number(cur.confidence.retrievalWeight) : (initial?.confidence?.retrievalWeight ?? 1) },
+        sourceRefs: Array.isArray(sourceRefs) && sourceRefs.length ? sourceRefs.slice(0, 6) : (cur?.sourceRefs || []),
+        evidenceRefs: cur?.evidenceRefs || [],
+        lastRecalledAt: cur?.lastRecalledAt || null,
+        lastResponseConfirmedAt: cur?.lastResponseConfirmedAt || null,
+        lastOwnerConfirmedAt: cur?.lastOwnerConfirmedAt || null,
+        recallCount: Number(cur?.recallCount || 0),
+        responseConfirmedCount: Number(cur?.responseConfirmedCount || 0),
+        correctionCount: Number(cur?.correctionCount || 0),
+        pinned: cur?.pinned === true,
+        reasonCodes: Array.isArray(cur?.reasonCodes) ? cur.reasonCodes.slice(0, 12) : [],
+        updatedAt: t,
+      }
+      if (type === 'recalled') { next.recallCount += 1; next.lastRecalledAt = t }
+      else if (type === 'response_confirmed') { next.responseConfirmedCount += 1; next.lastResponseConfirmedAt = t }
+      else if (type === 'owner_confirmed') { next.lastOwnerConfirmedAt = t; next.confidence = { level: 'owner_confirmed', retrievalWeight: 1 }; next.state = 'active'; next.pinned = true }
+      else if (type === 'correction_observed') { next.correctionCount += 1; next.confidence.retrievalWeight = Math.max(0.2, Number(next.confidence.retrievalWeight || 1) - 0.1); next.reasonCodes = [...new Set([...next.reasonCodes, 'correction_observed'])].slice(-12) }
+      else if (type === 'state_weakened') { next.state = 'weakened'; next.confidence.retrievalWeight = Math.min(Number(next.confidence.retrievalWeight || 1), 0.5); next.reasonCodes = [...new Set([...next.reasonCodes, 'weakened'])].slice(-12) }
+      else if (type === 'state_archived') { next.state = 'archived'; next.confidence.retrievalWeight = 0; next.reasonCodes = [...new Set([...next.reasonCodes, 'archived'])].slice(-12) }
+      else if (type === 'state_restored') { next.state = 'active'; next.confidence.retrievalWeight = 1; next.pinned = true; next.reasonCodes = [...new Set([...next.reasonCodes, 'restored'])].slice(-12) }
+      else if (type === 'source_invalidated') { next.sourceValidity = 'invalidated'; next.state = 'archived'; next.confidence.retrievalWeight = 0; next.reasonCodes = [...new Set([...next.reasonCodes, 'source_invalidated'])].slice(-12) }
+      this.db.prepare('INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(stateKey, JSON.stringify(next))
+      this.db.prepare('INSERT INTO meta(key,value) VALUES(?,?)').run(opKey, JSON.stringify({ key: k, type, at: t, sourceRefs: next.sourceRefs }))
+      this.db.prepare('INSERT INTO meta(key,value) VALUES(?,?)').run(`memaudit:${k}:${rev}`, JSON.stringify({ operationId: op, key: k, type, at: t, revision: rev, sourceRefs: next.sourceRefs, reasonCodes: next.reasonCodes }))
+      return { accepted: true, duplicate: false, revision: rev, state: next.state }
     })
   }
 
